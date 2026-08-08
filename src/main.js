@@ -2,21 +2,25 @@
 
 /*
  * Abyssal Drift — boot config.
- * Renders at 480x270 (16-bit-era proportions) and scales up with crisp
- * pixels to whatever window it's given.
+ *
+ * The canvas is 960x540 real pixels. The sea camera runs at zoom 2, so
+ * the world still shows a 480x270 window of 16-bit-era pixel art, while
+ * the HUD scene draws at zoom 1 and gets the full 960x540 to render
+ * crisp text into. Sea.UI_SCALE is that factor, shared by both.
  */
+
+Sea.UI_SCALE = 2;
 
 new Phaser.Game({
   type: Phaser.AUTO,
-  width: 480,
-  height: 270,
+  width: 480 * Sea.UI_SCALE,
+  height: 270 * Sea.UI_SCALE,
   backgroundColor: '#04060f',
   pixelArt: true,
   roundPixels: true,
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
-    zoom: 2,
   },
   physics: {
     default: 'arcade',

@@ -9,6 +9,9 @@
 
 window.Sea = window.Sea || {};
 
+/* Visible world area for a (possibly zoomed) camera, in world units. */
+Sea.viewSize = (cam) => ({ w: cam.width / cam.zoom, h: cam.height / cam.zoom });
+
 Sea.DEPTH = {
   water: 0,
   far: 1,
@@ -328,7 +331,11 @@ Sea.genGlowPlant = function (scene, key, hue, rand) {
 Sea.buildWorld = function (scene) {
   const W = Sea.WORLD;
   const cam = scene.cameras.main;
-  const view = { w: cam.width, h: cam.height };
+  // The camera is zoomed, so the visible world area is smaller than the
+  // canvas. Backdrop layers live in world space and are re-anchored to
+  // the camera's worldView each frame — that behaves predictably under
+  // zoom, where a zero scroll factor would not.
+  const view = Sea.viewSize(cam);
   const maxScrollY = W.height - view.h;
   const rand = Sea.rng(0xb10b);
 
@@ -336,14 +343,15 @@ Sea.buildWorld = function (scene) {
   const water = scene.add
     .image(0, 0, 'bgWater')
     .setOrigin(0, 0)
-    .setDepth(Sea.DEPTH.water)
-    .setScrollFactor(0);
+    .setDepth(Sea.DEPTH.water);
   water.setDisplaySize(view.w, 600);
   scene.parallax = [];
   scene.parallax.push({
     obj: water,
     update() {
-      water.y = -((600 - view.h) * (cam.scrollY / maxScrollY));
+      const wv = cam.worldView;
+      water.x = wv.x;
+      water.y = wv.y - (600 - view.h) * (wv.y / maxScrollY);
     },
   });
 
@@ -353,13 +361,14 @@ Sea.buildWorld = function (scene) {
     const layer = scene.add
       .tileSprite(0, 0, view.w, 256, key)
       .setOrigin(0, 0)
-      .setDepth(depth)
-      .setScrollFactor(0);
+      .setDepth(depth);
     scene.parallax.push({
       obj: layer,
       update() {
+        const wv = cam.worldView;
         layer.tilePositionX = cam.scrollX * fx;
-        layer.y = baseY + (maxScrollY - cam.scrollY) * fy;
+        layer.x = wv.x;
+        layer.y = wv.y + baseY + (maxScrollY - wv.y) * fy;
       },
     });
     return layer;
@@ -448,7 +457,7 @@ Sea.decorateTerrain = function (scene, rand) {
  */
 Sea.buildAtmosphere = function (scene) {
   const cam = scene.cameras.main;
-  const view = { w: cam.width, h: cam.height };
+  const view = Sea.viewSize(cam);
 
   // Plankton: faint additive motes drifting through the water column.
   // The emitter rides the camera; particles live in world space.
@@ -493,13 +502,15 @@ Sea.buildAtmosphere = function (scene) {
     .tileSprite(0, 0, view.w, view.h, 'fgDebris')
     .setOrigin(0, 0)
     .setDepth(Sea.DEPTH.fore)
-    .setScrollFactor(0)
     .setAlpha(0.8);
   scene.parallax.push({
     obj: fore,
     update() {
+      const wv = cam.worldView;
       fore.tilePositionX = cam.scrollX * 1.4;
       fore.tilePositionY = cam.scrollY * 1.4;
+      fore.x = wv.x;
+      fore.y = wv.y;
     },
   });
 
@@ -509,34 +520,24 @@ Sea.buildAtmosphere = function (scene) {
     .rectangle(0, 0, view.w, view.h, 0x010308)
     .setOrigin(0, 0)
     .setDepth(Sea.DEPTH.darkness)
-    .setScrollFactor(0)
     .setAlpha(0);
 
   // Vignette hugging the screen edges.
-  scene.add
+  const vignette = scene.add
     .image(0, 0, 'vignette')
     .setOrigin(0, 0)
     .setDepth(Sea.DEPTH.vignette)
-    .setScrollFactor(0)
     .setDisplaySize(view.w, view.h);
 
-  // Opening hint, fading away once you start drifting.
-  const hint = scene.add
-    .text(view.w / 2, view.h - 26, 'W A S D  —  drift', {
-      fontFamily: 'monospace',
-      fontSize: '10px',
-      color: '#9fd8ff',
-    })
-    .setOrigin(0.5)
-    .setDepth(Sea.DEPTH.vignette + 1)
-    .setScrollFactor(0)
-    .setAlpha(0.75);
-  scene.tweens.add({
-    targets: hint,
-    alpha: 0,
-    delay: 6000,
-    duration: 2400,
-    onComplete: () => hint.destroy(),
+  scene.parallax.push({
+    obj: vignette,
+    update() {
+      const wv = cam.worldView;
+      vignette.x = wv.x;
+      vignette.y = wv.y;
+      scene.darkness.x = wv.x;
+      scene.darkness.y = wv.y;
+    },
   });
 };
 

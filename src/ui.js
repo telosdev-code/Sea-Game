@@ -105,23 +105,8 @@ Sea.loadSave = function () {
 Sea.addMoney = function (scene, value, label, x, y) {
   Sea.save.money += value;
   Sea.storeSave();
-  const big = value >= 1000;
-  const popup = scene.add
-    .text(x, y, '+$' + value + '  ' + label, {
-      fontFamily: 'monospace',
-      fontSize: big ? '12px' : '8px',
-      color: big ? '#ffd24a' : '#ffe8a0',
-    })
-    .setOrigin(0.5, 1)
-    .setDepth(Sea.DEPTH.fore + 1);
-  scene.tweens.add({
-    targets: popup,
-    y: y - 22,
-    alpha: { from: 1, to: 0 },
-    duration: big ? 2600 : 1500,
-    ease: 'Sine.easeOut',
-    onComplete: () => popup.destroy(),
-  });
+  const ui = scene.scene.get('ui');
+  if (ui && ui.addPopup) ui.addPopup(value, label, x, y);
 };
 
 Sea.storeSave = function () {
@@ -195,6 +180,11 @@ Sea.SceneUI = class extends Phaser.Scene {
     this.buildPrompt(W, H);
     this.buildPauseOverlay(W, H);
     this.buildMenu(W, H);
+    this.buildHint(W, H);
+
+    // World-anchored money popups live here rather than in the sea scene
+    // so they render at HUD resolution instead of the zoomed world's.
+    this.popups = [];
 
     // photo flash overlay
     this.flash = this.add
@@ -207,25 +197,103 @@ Sea.SceneUI = class extends Phaser.Scene {
     this.menuOpen = false;
   }
 
+  /* Opening control hint, fading away once you start drifting. */
+  buildHint(W, H) {
+    const U = Sea.UI_SCALE;
+    const hint = this.add
+      .text(W / 2, H - 26 * U, 'W A S D  —  drift', {
+        fontFamily: 'monospace',
+        fontSize: 10 * U + 'px',
+        color: '#9fd8ff',
+      })
+      .setOrigin(0.5)
+      .setAlpha(0.75);
+    this.tweens.add({
+      targets: hint,
+      alpha: 0,
+      delay: 6000,
+      duration: 2400,
+      onComplete: () => hint.destroy(),
+    });
+  }
+
+  /* Float a "+$n label" popup anchored to a world position. */
+  addPopup(value, label, wx, wy) {
+    const U = Sea.UI_SCALE;
+    const big = value >= 1000;
+    const text = this.add
+      .text(0, 0, '+$' + value + '  ' + label, {
+        fontFamily: 'monospace',
+        fontSize: (big ? 12 : 8) * U + 'px',
+        color: big ? '#ffd24a' : '#ffe8a0',
+      })
+      .setOrigin(0.5, 1)
+      .setDepth(7);
+    const popup = { text, wx, wy, rise: 0 };
+    this.popups.push(popup);
+    this.tweens.add({
+      targets: popup,
+      rise: 22 * U,
+      duration: big ? 2600 : 1500,
+      ease: 'Sine.easeOut',
+    });
+    this.tweens.add({
+      targets: text,
+      alpha: { from: 1, to: 0 },
+      duration: big ? 2600 : 1500,
+      ease: 'Sine.easeOut',
+      onComplete: () => {
+        text.destroy();
+        this.popups = this.popups.filter((p) => p !== popup);
+      },
+    });
+  }
+
+  /*
+   * Project a world point into HUD space. The view origin is worldView,
+   * not scrollX/Y — those differ by the zoom offset.
+   */
+  toScreen(cam, wx, wy) {
+    const wv = cam.worldView;
+    return { x: (wx - wv.x) * cam.zoom, y: (wy - wv.y) * cam.zoom };
+  }
+
+  /*
+   * Project world-anchored popups into HUD space each frame, kept inside
+   * the viewport so a payout near the screen edge is still readable.
+   */
+  updatePopups() {
+    const cam = this.sea.cameras.main;
+    const W = this.scale.gameSize.width;
+    const H = this.scale.gameSize.height;
+    for (const p of this.popups) {
+      const s = this.toScreen(cam, p.wx, p.wy);
+      const halfW = p.text.width / 2;
+      p.text.x = Phaser.Math.Clamp(s.x, halfW + 4, W - halfW - 4);
+      p.text.y = Phaser.Math.Clamp(s.y - p.rise, p.text.height + 4, H - 4);
+    }
+  }
+
   photoFlash() {
     this.flash.setAlpha(0.55);
     this.tweens.add({ targets: this.flash, alpha: 0, duration: 220 });
   }
 
   buildMoney(W) {
+    const U = Sea.UI_SCALE;
     this.shownMoney = Sea.save.money;
     this.moneyText = this.add
-      .text(W - 8, 9, '$ 0', {
+      .text(W - 8 * U, 9 * U, '$ 0', {
         fontFamily: 'monospace',
-        fontSize: '11px',
+        fontSize: 11 * U + 'px',
         color: '#ffd24a',
       })
       .setOrigin(1, 0)
       .setDepth(6);
     this.moneyLabel = this.add
-      .text(W - 8, 22, 'earned', {
+      .text(W - 8 * U, 24 * U, 'earned', {
         fontFamily: 'monospace',
-        fontSize: '6px',
+        fontSize: 6 * U + 'px',
         color: '#8a7434',
       })
       .setOrigin(1, 0)
@@ -235,39 +303,40 @@ Sea.SceneUI = class extends Phaser.Scene {
   /* ---------------- depth gauge ---------------- */
 
   buildGauge(W, H) {
-    const x = 464;
-    this.gaugeTop = 80;
-    this.gaugeH = 150;
+    const U = Sea.UI_SCALE;
+    const x = 464 * U;
+    this.gaugeTop = 80 * U;
+    this.gaugeH = 150 * U;
     this.add
-      .rectangle(x, this.gaugeTop, 3, this.gaugeH, 0x1c2f4e)
+      .rectangle(x, this.gaugeTop, 3 * U, this.gaugeH, 0x1c2f4e)
       .setOrigin(0, 0)
       .setAlpha(0.9);
     for (let m = 0; m <= 1000; m += 100) {
       const y = this.gaugeTop + (m / 1000) * this.gaugeH;
       const major = m % 500 === 0;
       this.add
-        .rectangle(x - (major ? 4 : 2), y, major ? 7 : 5, 1, 0x2a4266)
+        .rectangle(x - (major ? 4 : 2) * U, y, (major ? 7 : 5) * U, U, 0x2a4266)
         .setOrigin(0, 0.5);
       if (major) {
         this.add
-          .text(x - 6, y, String(m), {
+          .text(x - 6 * U, y, String(m), {
             fontFamily: 'monospace',
-            fontSize: '7px',
+            fontSize: 7 * U + 'px',
             color: '#5f7fa8',
           })
           .setOrigin(1, 0.5);
       }
     }
     this.ratingMark = this.add
-      .rectangle(x - 3, this.gaugeTop, 9, 2, 0xd86a5a)
+      .rectangle(x - 3 * U, this.gaugeTop, 9 * U, 2 * U, 0xd86a5a)
       .setOrigin(0, 0.5);
     this.depthMark = this.add
-      .rectangle(x - 3, this.gaugeTop, 9, 3, 0xffd878)
+      .rectangle(x - 3 * U, this.gaugeTop, 9 * U, 3 * U, 0xffd878)
       .setOrigin(0, 0.5);
     this.depthText = this.add
-      .text(470, this.gaugeTop + this.gaugeH + 10, '0 m', {
+      .text(470 * U, this.gaugeTop + this.gaugeH + 10 * U, '0 m', {
         fontFamily: 'monospace',
-        fontSize: '9px',
+        fontSize: 9 * U + 'px',
         color: '#ffd878',
       })
       .setOrigin(1, 0.5);
@@ -276,12 +345,13 @@ Sea.SceneUI = class extends Phaser.Scene {
   /* ---------------- minimap ---------------- */
 
   buildMinimap(W, H) {
-    this.mapBox = { x: 8, y: H - 58 - 8, w: 124, h: 58 };
+    const U = Sea.UI_SCALE;
+    this.mapBox = { x: 8 * U, y: H - 66 * U, w: 124 * U, h: 58 * U };
     const b = this.mapBox;
     this.add
-      .rectangle(b.x - 2, b.y - 2, b.w + 4, b.h + 4, 0x050b16, 0.88)
+      .rectangle(b.x - 2 * U, b.y - 2 * U, b.w + 4 * U, b.h + 4 * U, 0x050b16, 0.88)
       .setOrigin(0, 0)
-      .setStrokeStyle(1, 0x2a4a6a);
+      .setStrokeStyle(U, 0x2a4a6a);
     this.mapImg = this.add.image(b.x, b.y, 'minimapTex').setOrigin(0, 0);
     const maskG = this.make.graphics();
     maskG.fillRect(b.x, b.y, b.w, b.h);
@@ -338,7 +408,7 @@ Sea.SceneUI = class extends Phaser.Scene {
       blip
         .setVisible(true)
         .setTint(tint)
-        .setScale(scale)
+        .setScale(scale * Sea.UI_SCALE)
         .setAlpha(alpha === undefined ? 1 : alpha)
         .setPosition(
           Phaser.Math.Clamp(this.mapImg.x + wx * toMap * s, b.x + 1, b.x + b.w - 1),
@@ -388,29 +458,34 @@ Sea.SceneUI = class extends Phaser.Scene {
   /* ---------------- station arrow / prompt / pause ---------------- */
 
   buildArrow() {
-    this.arrow = this.add.image(0, 0, 'hudArrow').setVisible(false).setDepth(6);
+    this.arrow = this.add
+      .image(0, 0, 'hudArrow')
+      .setScale(Sea.UI_SCALE)
+      .setVisible(false)
+      .setDepth(6);
   }
 
   buildPrompt(W, H) {
+    const U = Sea.UI_SCALE;
     this.prompt = this.add
-      .text(W / 2, H - 34, '[E]  dock with station', {
+      .text(W / 2, H - 34 * U, '[E]  dock with station', {
         fontFamily: 'monospace',
-        fontSize: '10px',
+        fontSize: 10 * U + 'px',
         color: '#aef4ff',
       })
       .setOrigin(0.5)
       .setVisible(false);
     this.pauseHint = this.add
-      .text(140, H - 12, 'F photo · P pause · M sound', {
+      .text(142 * U, H - 12 * U, 'F photo · P pause · M sound', {
         fontFamily: 'monospace',
-        fontSize: '7px',
+        fontSize: 7 * U + 'px',
         color: '#44608a',
       })
       .setOrigin(0, 0.5);
     this.salvageHintText = this.add
-      .text(W / 2, H - 48, 'salvage winch required — fit one at the station', {
+      .text(W / 2, H - 48 * U, 'salvage winch required — fit one at the station', {
         fontFamily: 'monospace',
-        fontSize: '8px',
+        fontSize: 8 * U + 'px',
         color: '#d8a86a',
       })
       .setOrigin(0.5)
@@ -420,17 +495,18 @@ Sea.SceneUI = class extends Phaser.Scene {
   buildPauseOverlay(W, H) {
     this.pauseOverlay = this.add.container(0, 0).setVisible(false).setDepth(10);
     const dim = this.add.rectangle(0, 0, W, H, 0x02040a, 0.55).setOrigin(0);
+    const U = Sea.UI_SCALE;
     const label = this.add
-      .text(W / 2, H / 2 - 8, 'PAUSED', {
+      .text(W / 2, H / 2 - 8 * U, 'PAUSED', {
         fontFamily: 'monospace',
-        fontSize: '18px',
+        fontSize: 18 * U + 'px',
         color: '#cfe8ff',
       })
       .setOrigin(0.5);
     const hint = this.add
-      .text(W / 2, H / 2 + 12, 'P — resume', {
+      .text(W / 2, H / 2 + 14 * U, 'P — resume', {
         fontFamily: 'monospace',
-        fontSize: '9px',
+        fontSize: 9 * U + 'px',
         color: '#6a88a8',
       })
       .setOrigin(0.5);
@@ -448,31 +524,32 @@ Sea.SceneUI = class extends Phaser.Scene {
   /* ---------------- station menu ---------------- */
 
   buildMenu(W, H) {
+    const U = Sea.UI_SCALE;
     this.menu = this.add.container(0, 0).setVisible(false).setDepth(20);
     const dim = this.add.rectangle(0, 0, W, H, 0x02040a, 0.6).setOrigin(0);
     const panel = this.add
-      .rectangle(W / 2, H / 2, 424, 244, 0x081226, 0.97)
-      .setStrokeStyle(1, 0x2a4a6a);
+      .rectangle(W / 2, H / 2, 424 * U, 244 * U, 0x081226, 0.97)
+      .setStrokeStyle(U, 0x2a4a6a);
     const title = this.add
-      .text(W / 2, 28, 'SURFACE STATION — EQUIPMENT', {
+      .text(W / 2, 28 * U, 'SURFACE STATION — EQUIPMENT', {
         fontFamily: 'monospace',
-        fontSize: '11px',
+        fontSize: 11 * U + 'px',
         color: '#cfe8ff',
       })
       .setOrigin(0.5);
     const sub = this.add
-      .text(W / 2, 40, 'sea trials: all upgrades free — click to install', {
+      .text(W / 2, 42 * U, 'sea trials: all upgrades free — click to install', {
         fontFamily: 'monospace',
-        fontSize: '7px',
+        fontSize: 7 * U + 'px',
         color: '#5f7fa8',
       })
       .setOrigin(0.5);
     this.menu.add([dim, panel, title, sub]);
 
     this.menuBalance = this.add
-      .text(W / 2 + 200, 28, '', {
+      .text(W / 2 + 200 * U, 28 * U, '', {
         fontFamily: 'monospace',
-        fontSize: '9px',
+        fontSize: 9 * U + 'px',
         color: '#ffd24a',
       })
       .setOrigin(1, 0.5);
@@ -481,30 +558,30 @@ Sea.SceneUI = class extends Phaser.Scene {
     this.menuRows = {};
     const keys = ['depth', 'lights', 'sonar', 'minimap', 'salvage'];
     keys.forEach((key, i) => {
-      const y = 54 + i * 31;
+      const y = (54 + i * 31) * U;
       const def = Sea.UPGRADES[key];
-      const name = this.add.text(44, y, def.name, {
+      const name = this.add.text(44 * U, y, def.name, {
         fontFamily: 'monospace',
-        fontSize: '10px',
+        fontSize: 10 * U + 'px',
         color: '#ffd878',
       });
-      const fitted = this.add.text(44, y + 12, '', {
+      const fitted = this.add.text(44 * U, y + 13 * U, '', {
         fontFamily: 'monospace',
-        fontSize: '8px',
+        fontSize: 8 * U + 'px',
         color: '#9fc0d8',
       });
       const pips = def.tiers.map((_, ti) =>
         this.add
-          .rectangle(150 + ti * 10, y + 5, 6, 6, 0x1c3048)
-          .setStrokeStyle(1, 0x2a4a6a)
+          .rectangle((150 + ti * 10) * U, y + 5 * U, 6 * U, 6 * U, 0x1c3048)
+          .setStrokeStyle(U, 0x2a4a6a)
       );
       const btnBg = this.add
-        .rectangle(364, y + 9, 144, 24, 0x14304a)
-        .setStrokeStyle(1, 0x2a6a8a);
+        .rectangle(364 * U, y + 9 * U, 144 * U, 24 * U, 0x14304a)
+        .setStrokeStyle(U, 0x2a6a8a);
       const btnText = this.add
-        .text(364, y + 9, '', {
+        .text(364 * U, y + 9 * U, '', {
           fontFamily: 'monospace',
-          fontSize: '7px',
+          fontSize: 7 * U + 'px',
           color: '#aef4ff',
         })
         .setOrigin(0.5);
@@ -519,13 +596,13 @@ Sea.SceneUI = class extends Phaser.Scene {
 
     // undock button
     const undockBg = this.add
-      .rectangle(W / 2, H - 32, 190, 22, 0x1a3a2c)
-      .setStrokeStyle(1, 0x2a8a5a)
+      .rectangle(W / 2, H - 32 * U, 190 * U, 22 * U, 0x1a3a2c)
+      .setStrokeStyle(U, 0x2a8a5a)
       .setInteractive({ useHandCursor: true });
     const undockText = this.add
-      .text(W / 2, H - 32, 'UNDOCK & DIVE  [ESC]', {
+      .text(W / 2, H - 32 * U, 'UNDOCK & DIVE  [ESC]', {
         fontFamily: 'monospace',
-        fontSize: '9px',
+        fontSize: 9 * U + 'px',
         color: '#7dffd8',
       })
       .setOrigin(0.5);
@@ -535,9 +612,9 @@ Sea.SceneUI = class extends Phaser.Scene {
 
     // reset save
     const resetText = this.add
-      .text(48, H - 32, 'reset save', {
+      .text(48 * U, H - 32 * U, 'reset save', {
         fontFamily: 'monospace',
-        fontSize: '7px',
+        fontSize: 7 * U + 'px',
         color: '#7a5050',
       })
       .setOrigin(0, 0.5)
@@ -623,6 +700,7 @@ Sea.SceneUI = class extends Phaser.Scene {
     this.moneyText.setText('$ ' + Math.round(this.shownMoney).toLocaleString());
 
     this.salvageHintText.setVisible(!!sea.salvageHint && !Sea.state.docked);
+    this.updatePopups();
 
     // dock menu follows the docked state set by the sea scene
     if (Sea.state.docked && !this.menuOpen) this.openMenu();
@@ -654,8 +732,10 @@ Sea.SceneUI = class extends Phaser.Scene {
     );
     if (!Sea.state.docked && dist > 420) {
       const cam = sea.cameras.main;
-      const sx = sea.subBody.x - cam.scrollX;
-      const sy = sea.subBody.y - cam.scrollY;
+      const s = this.toScreen(cam, sea.subBody.x, sea.subBody.y);
+      const sx = s.x;
+      const sy = s.y;
+      const r = 40 * Sea.UI_SCALE;
       const ang = Phaser.Math.Angle.Between(
         sea.subBody.x,
         sea.subBody.y,
@@ -664,7 +744,7 @@ Sea.SceneUI = class extends Phaser.Scene {
       );
       this.arrow
         .setVisible(true)
-        .setPosition(sx + Math.cos(ang) * 40, sy + Math.sin(ang) * 40)
+        .setPosition(sx + Math.cos(ang) * r, sy + Math.sin(ang) * r)
         .setRotation(ang)
         .setAlpha(0.5 + 0.3 * Math.sin(time / 300));
     } else {

@@ -150,61 +150,180 @@ Sea.makeCreatureTextures = function (scene) {
   });
 
   // The golden megalodon: a huge gilded shark that haunts the bedrock
-  // trenches. Two frames, tail sweeping. Facing right.
-  const megPal = {
-    O: '#2a1c06',
-    G: '#e8c04a', // gold hide
-    g: '#c89c30', // gold shade
-    L: '#f8e8a8', // belly
-    F: '#b08828', // fins
-    E: '#1a1208', // eye
-    W: '#fff8d8', // glint / teeth
-  };
-  const megFrames = [
-    [
-      '....O...................OOO.....................',
-      '...OFO................OOGGGOO...................',
-      '...OFFO.............OOGGGGGGGOO.................',
-      '....OFFO...........OGGGGGGGGGGGOOOO.............',
-      '....OFFOO.......OOOGGGGGGGGGGGGGGGGOOOO.........',
-      '.....OFFFOOOOOOOGGGGGGGGGGGGGGGGGGGGGGGOOO......',
-      '.....OFGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGOO.....',
-      '....OGGGGGGGGGGGGGGGGGGGGGGGGgGGgGGgGGEGGGO.....',
-      '...OGGGGGGGGGGGGGGGGGGGGGGGGGGgGGgGGgGGGGGGO....',
-      '..OLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLOWWWWWO.....',
-      '..OLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLOOOOOOO......',
-      '...OLLLLLOOOLLLLLLLOFFOLLLLLLLOOOOO.............',
-      '....OOOOO..OOOOLLLLOFFFOLLOOOO..................',
-      '................OOOOFFFFOOO.....................',
-      '.....................OFFO.......................',
-      '......................OO........................',
-    ],
-    [
-      '......................OOO.......................',
-      '....................OOGGGOO.....................',
-      '..O.................OGGGGGGGOO..................',
-      '..OFO..............OGGGGGGGGGGGOOOO.............',
-      '..OFFOO.........OOOGGGGGGGGGGGGGGGGOOOO.........',
-      '...OFFFOOOOOOOOGGGGGGGGGGGGGGGGGGGGGGGGOOO......',
-      '....OFGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGOO.....',
-      '....OGGGGGGGGGGGGGGGGGGGGGGGGgGGgGGgGGEGGGO.....',
-      '...OGGGGGGGGGGGGGGGGGGGGGGGGGGgGGgGGgGGGGGGO....',
-      '..OLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLOWWWWWO.....',
-      '.OLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLOOOOOOO........',
-      '.OLLLLLLOOOLLLLLLLLOFFOLLLLLLLOOOOO.............',
-      '..OOOOOO...OOOOLLLLOFFFOLLOOOO..................',
-      '...............OOOOFFFFOOO......................',
-      '....................OFFO........................',
-      '.....................OO.........................',
-    ],
-  ];
-  Sea.pixelTexture(scene, 'meg', megFrames, megPal);
+  // trenches. Drawn procedurally (see genMegalodon) so it can be big
+  // without hand-maintaining a sprite grid this size.
+  Sea.genMegalodon(scene, 'meg');
   scene.anims.create({
     key: 'meg-swim',
     frames: [{ key: 'meg', frame: 0 }, { key: 'meg', frame: 1 }],
     frameRate: 1.4,
     repeat: -1,
   });
+};
+
+/*
+ * The megalodon is far too large to hand-draw as a character grid, so it
+ * is built from geometry instead: a tapered spindle body, triangular
+ * fins, and a forked crescent tail, shaded in bands from the gilded back
+ * down to a pale belly. Two frames sweep the tail and bend the flank.
+ */
+Sea.genMegalodon = function (scene, key) {
+  const W = 112;
+  const H = 60;
+  const CY = 30;
+  const NOSE_X = 104;
+  const TAIL_X = 24;
+  const PEAK_X = 62;
+  const MAX_T = 11.5;
+
+  const PAL = {
+    out: '#2a1c06',
+    lit: '#fbe79a', // sheen along the back
+    body: '#e8c04a', // gold flank
+    shade: '#c08c28', // lower flank shadow
+    belly: '#f5e2ad',
+    fin: '#a87e22',
+    finLit: '#cf9f34',
+    eye: '#160e04',
+    tooth: '#fffdf0',
+  };
+
+  // Half-thickness of the body at x: rounded toward the snout, long
+  // taper toward the tail.
+  const halfT = (x) => {
+    if (x > NOSE_X || x < TAIL_X) return -1;
+    if (x >= PEAK_X) {
+      // conical snout
+      const t = (x - PEAK_X) / (NOSE_X - PEAK_X);
+      return MAX_T * Math.pow(Math.max(0, 1 - t), 0.44);
+    }
+    const t = (PEAK_X - x) / (PEAK_X - TAIL_X);
+    return MAX_T * 0.86 * Math.pow(Math.max(0, 1 - t), 0.42) + 2.3;
+  };
+
+  // Centreline, bending toward the tail so the sweep reads as motion.
+  const centerY = (x, sweep) => {
+    const t = Phaser.Math.Clamp((PEAK_X - x) / (PEAK_X - TAIL_X), 0, 1);
+    return CY + sweep * 5 * t * t;
+  };
+
+  const tex = scene.textures.createCanvas(key, W * 2, H);
+  const ctx = tex.getContext();
+
+  for (let f = 0; f < 2; f++) {
+    const sweep = f === 0 ? -1 : 1;
+    const mask = new Uint8Array(W * H); // 0 empty, 1 body, 2 fin
+    const put = (x, y, v) => {
+      if (x >= 0 && x < W && y >= 0 && y < H) mask[y * W + x] = v;
+    };
+
+    // body spindle
+    for (let x = TAIL_X; x <= NOSE_X; x++) {
+      const ht = halfT(x);
+      if (ht <= 0) continue;
+      const c = centerY(x, sweep);
+      for (let y = Math.round(c - ht); y <= Math.round(c + ht); y++) {
+        put(x, y, 1);
+      }
+    }
+
+    // filled triangle (fins and tail lobes)
+    const tri = (ax, ay, bx, by, cx, cy) => {
+      const minX = Math.max(0, Math.floor(Math.min(ax, bx, cx)));
+      const maxX = Math.min(W - 1, Math.ceil(Math.max(ax, bx, cx)));
+      const minY = Math.max(0, Math.floor(Math.min(ay, by, cy)));
+      const maxY = Math.min(H - 1, Math.ceil(Math.max(ay, by, cy)));
+      const sign = (px, py, qx, qy, rx, ry) =>
+        (px - rx) * (qy - ry) - (qx - rx) * (py - ry);
+      for (let y = minY; y <= maxY; y++) {
+        for (let x = minX; x <= maxX; x++) {
+          const d1 = sign(x, y, ax, ay, bx, by);
+          const d2 = sign(x, y, bx, by, cx, cy);
+          const d3 = sign(x, y, cx, cy, ax, ay);
+          const neg = d1 < 0 || d2 < 0 || d3 < 0;
+          const pos = d1 > 0 || d2 > 0 || d3 > 0;
+          if (!(neg && pos) && mask[y * W + x] === 0) mask[y * W + x] = 2;
+        }
+      }
+    };
+
+    // Fins are anchored on the body outline and reach well clear of it,
+    // since only the part outside the spindle ends up visible.
+    tri(44, 22, 60, 4, 78, 23); // dorsal
+    tri(30, 24, 34, 14, 42, 25); // second dorsal
+    tri(70, 41, 90, 35, 57, 56); // pectoral scythe
+    tri(43, 39, 55, 37, 38, 51); // pelvic
+    tri(31, 37, 40, 36, 27, 46); // anal
+
+    // Forked crescent tail: a long upper lobe, shorter lower lobe, with
+    // a wide shared base so the fork reads as one fin.
+    const tc = centerY(TAIL_X, sweep);
+    tri(29, tc - 7, 27, tc + 8, 2, tc - 20 + sweep * 4); // upper lobe
+    tri(29, tc - 5, 27, tc + 8, 6, tc + 16 + sweep * 4); // lower lobe
+    tri(29, tc - 6, 29, tc + 7, 12, tc - 3 + sweep * 3); // filled notch
+
+    // paint
+    const empty = (x, y) =>
+      x < 0 || x >= W || y < 0 || y >= H || mask[y * W + x] === 0;
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const m = mask[y * W + x];
+        if (!m) continue;
+        let color;
+        if (empty(x - 1, y) || empty(x + 1, y) || empty(x, y - 1) || empty(x, y + 1)) {
+          color = PAL.out;
+        } else if (m === 2) {
+          // solid fins, lit only where they join the body
+          color = empty(x, y - 2) || empty(x, y + 2) ? PAL.fin : PAL.finLit;
+        } else {
+          const c = centerY(x, sweep);
+          const ht = halfT(x);
+          const rel = (y - (c - ht)) / (2 * ht); // 0 back .. 1 belly
+          if (rel < 0.1) color = PAL.lit;
+          else if (rel < 0.56) color = PAL.body;
+          else if (rel < 0.86) color = PAL.shade;
+          else color = PAL.belly;
+        }
+        ctx.fillStyle = color;
+        ctx.fillRect(f * W + x, y, 1, 1);
+      }
+    }
+
+    const dot = (x, y, w, h, color) => {
+      ctx.fillStyle = color;
+      ctx.fillRect(f * W + x, y, w, h);
+    };
+
+    // gill slits
+    for (let i = 0; i < 5; i++) {
+      const gx = 73 + i * 4;
+      const c = centerY(gx, sweep);
+      const ht = halfT(gx);
+      dot(gx, Math.round(c - ht * 0.42), 1, Math.round(ht * 0.9), PAL.shade);
+    }
+
+    // underslung jaw, hugging the belly line, with a glint of teeth
+    for (let x = 90; x <= 102; x++) {
+      const y = Math.round(centerY(x, sweep) + halfT(x) * 0.62);
+      dot(x, y, 1, 1, PAL.out);
+      if (x % 4 === 0) dot(x, y - 1, 1, 1, PAL.tooth);
+    }
+
+    // eye
+    const ec = Math.round(centerY(92, sweep) - 5);
+    dot(90, ec, 5, 4, PAL.out);
+    dot(91, ec + 1, 2, 2, PAL.eye);
+    dot(93, ec + 1, 1, 1, PAL.tooth);
+
+    // old scars across the flank
+    dot(52, Math.round(centerY(52, sweep) - 7), 7, 1, PAL.lit);
+    dot(63, Math.round(centerY(63, sweep) + 5), 5, 1, PAL.lit);
+  }
+
+  tex.refresh();
+  tex.add(0, 0, 0, 0, W, H);
+  tex.add(1, 0, W, 0, W, H);
+  return tex;
 };
 
 /* ------------------------------------------------------------------ */
@@ -309,7 +428,8 @@ Sea.spawnCreatures = function (scene) {
   }
 
   // The golden megalodon: one, at the bottom of the world.
-  let megSpot = Sea.openSpot(rand, 880, 975, 60);
+  let megSpot = Sea.openSpot(rand, 880, 975, 80);
+  if (!megSpot) megSpot = Sea.openSpot(rand, 860, 980, 60);
   if (!megSpot) megSpot = Sea.openSpot(rand, 840, 985, 42);
   if (megSpot) {
     const spr = scene.add
@@ -320,7 +440,7 @@ Sea.spawnCreatures = function (scene) {
       .image(megSpot.x, megSpot.y, 'orb')
       .setBlendMode(Phaser.BlendModes.ADD)
       .setTint(0xffd24a)
-      .setScale(2.6)
+      .setScale(5.2)
       .setAlpha(0.22)
       .setDepth(Sea.DEPTH.glow);
     scene.tweens.add({
@@ -422,15 +542,15 @@ Sea.updateCreatures = function (scene, time, deltaMs) {
       c.spr.x += c.vx * dt;
       if (c.spr.x < 400) c.vx = Math.abs(c.vx);
       else if (c.spr.x > W.width - 400) c.vx = -Math.abs(c.vx);
-      if (Sea.isSolid(c.spr.x + Math.sign(c.vx) * 90, c.spr.y)) c.vx = -c.vx;
+      if (Sea.isSolid(c.spr.x + Math.sign(c.vx) * 140, c.spr.y)) c.vx = -c.vx;
       c.spr.setFlipX(c.vx < 0);
       // hold to the bedrock band
       const m = Sea.depthAt(c.spr.y);
       let vy = Math.sin(c.phase * 0.35) * 7;
       if (m < 870) vy += 10;
       else if (m > 985) vy -= 10;
-      if (vy < 0 && Sea.isSolid(c.spr.x, c.spr.y - 40)) vy = 4;
-      else if (vy > 0 && Sea.isSolid(c.spr.x, c.spr.y + 40)) vy = -4;
+      if (vy < 0 && Sea.isSolid(c.spr.x, c.spr.y - 58)) vy = 4;
+      else if (vy > 0 && Sea.isSolid(c.spr.x, c.spr.y + 58)) vy = -4;
       c.spr.y += vy * dt;
       c.spr.rotation = Math.sin(c.phase * 0.35) * 0.04 * (c.vx < 0 ? -1 : 1);
       c.glow.x = c.spr.x;

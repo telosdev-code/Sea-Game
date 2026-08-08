@@ -63,6 +63,14 @@ Sea.SceneMain = class extends Phaser.Scene {
   }
 
   /*
+   * Camera zoom is applied before the world is built so every layer can
+   * size itself against the visible world area rather than the canvas.
+   */
+  init() {
+    this.cameras.main.setZoom(Sea.UI_SCALE);
+  }
+
+  /*
    * Snap a photo: any un-photographed wildlife close enough to the sub
    * and inside the camera's view is captured and paid out.
    */

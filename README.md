@@ -9,6 +9,10 @@ Built with HTML5 Canvas + [Phaser 3](https://phaser.io/) (vendored locally,
 no build step, no network needed). All pixel art is drawn procedurally in
 code — there are no image files.
 
+The canvas is 960×540. The sea camera runs at 2× zoom so the world still
+shows a 480×270 window of 16-bit-era pixel art, while the HUD scene draws
+unzoomed and gets the full resolution for crisp text.
+
 ## Run it
 
 Open `index.html` in a browser. That's it.
