@@ -22,5 +22,5 @@ new Phaser.Game({
     default: 'arcade',
     arcade: { gravity: { x: 0, y: 0 } },
   },
-  scene: [Sea.SceneMain],
+  scene: [Sea.SceneMain, Sea.SceneUI],
 });

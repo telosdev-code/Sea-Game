@@ -150,12 +150,15 @@ Sea.spawnCreatures = function (scene) {
   scene.creatures = [];
 
   // Fish schools: a shared anchor wanders; each fish holds a loose slot
-  // around it with its own swim wobble.
-  for (let s = 0; s < 8; s++) {
+  // around it with its own swim wobble. Schools favour the upper waters
+  // and the open galleries between formations.
+  for (let s = 0; s < 14; s++) {
+    const spot = Sea.openSpot(rand, 30, 620, 70);
+    if (!spot) continue;
     const school = {
       type: 'school',
-      x: 400 + rand() * (W.width - 800),
-      y: 160 + rand() * (W.height - 400),
+      x: spot.x,
+      y: spot.y,
       heading: rand() * Math.PI * 2,
       speed: 16 + rand() * 14,
       wanderPhase: rand() * 100,
@@ -180,11 +183,14 @@ Sea.spawnCreatures = function (scene) {
     scene.creatures.push(school);
   }
 
-  // Jellyfish: pulse upward, sink between pulses, drift sideways.
+  // Jellyfish: pulse upward, sink between pulses, drift sideways. They
+  // haunt every depth, glowing brighter company the deeper you go.
   const jellyTints = [0xffffff, 0xd0b8ff, 0xb8e4ff];
-  for (let j = 0; j < 12; j++) {
-    const x = 500 + rand() * (W.width - 1000);
-    const y = 180 + rand() * (W.height - 420);
+  for (let j = 0; j < 22; j++) {
+    const spot = Sea.openSpot(rand, 60, 940, 55);
+    if (!spot) continue;
+    const x = spot.x;
+    const y = spot.y;
     const tint = jellyTints[Math.floor(rand() * 3)];
     const spr = scene.add
       .sprite(x, y, 'jelly', 0)
@@ -209,16 +215,13 @@ Sea.spawnCreatures = function (scene) {
     });
   }
 
-  // Sea turtles: two of them, slowly crossing the whole trench.
-  for (let t = 0; t < 2; t++) {
-    const dir = t === 0 ? 1 : -1;
+  // Sea turtles: slow travellers of the sunlit-adjacent waters.
+  for (let t = 0; t < 4; t++) {
+    const spot = Sea.openSpot(rand, 40, 480, 80);
+    if (!spot) continue;
+    const dir = t % 2 === 0 ? 1 : -1;
     const spr = scene.add
-      .sprite(
-        800 + rand() * (W.width - 1600),
-        220 + rand() * (W.height - 480),
-        'turtle',
-        0
-      )
+      .sprite(spot.x, spot.y, 'turtle', 0)
       .setDepth(Sea.DEPTH.creature)
       .play('turtle-swim');
     scene.creatures.push({
@@ -254,11 +257,18 @@ Sea.updateCreatures = function (scene, time, deltaMs) {
       };
       if (c.x < 260) steer(0);
       else if (c.x > W.width - 260) steer(Math.PI);
-      if (c.y < 140) steer(Math.PI / 2);
+      if (c.y < Sea.SURFACE_Y + 60) steer(Math.PI / 2);
       else if (c.y > W.height - 170) steer(-Math.PI / 2);
 
-      c.x += Math.cos(c.heading) * c.speed * dt;
-      c.y += Math.sin(c.heading) * c.speed * dt;
+      // Turn away from rock ahead rather than swimming into it.
+      const aheadX = c.x + Math.cos(c.heading) * 56;
+      const aheadY = c.y + Math.sin(c.heading) * 56;
+      if (Sea.isSolid(aheadX, aheadY)) {
+        c.heading += 2.6 * dt;
+      } else {
+        c.x += Math.cos(c.heading) * c.speed * dt;
+        c.y += Math.sin(c.heading) * c.speed * dt;
+      }
 
       const facingLeft = Math.cos(c.heading) < 0;
       for (const f of c.fish) {
@@ -276,8 +286,11 @@ Sea.updateCreatures = function (scene, time, deltaMs) {
       c.vy += 9 * dt; // slow sink between pulses
       c.vy = Phaser.Math.Clamp(c.vy, -32, 11);
       c.spr.y += c.vy * dt;
-      if (c.spr.y < 130) c.spr.y = 130;
+      if (c.spr.y < Sea.SURFACE_Y + 40) c.spr.y = Sea.SURFACE_Y + 40;
       if (c.spr.y > W.height - 130) c.vy = -24;
+      // Rock above or below turns the drift around.
+      if (c.vy < 0 && Sea.isSolid(c.spr.x, c.spr.y - 26)) c.vy = 6;
+      else if (c.vy > 0 && Sea.isSolid(c.spr.x, c.spr.y + 26)) c.vy = -18;
       c.spr.x = c.baseX + Math.sin(c.t * 0.28 + c.driftPhase) * 16;
 
       c.glow.x = c.spr.x;
@@ -288,6 +301,10 @@ Sea.updateCreatures = function (scene, time, deltaMs) {
       c.spr.x += c.vx * dt;
       if (c.spr.x < 300) c.vx = Math.abs(c.vx);
       else if (c.spr.x > W.width - 300) c.vx = -Math.abs(c.vx);
+      // Rock ahead: turn around.
+      if (Sea.isSolid(c.spr.x + Math.sign(c.vx) * 60, c.spr.y)) {
+        c.vx = -c.vx;
+      }
       c.spr.setFlipX(c.vx < 0);
       c.spr.y = c.baseY + Math.sin(c.phase * 0.45) * 9;
       c.spr.rotation = Math.sin(c.phase * 0.45) * 0.06 * (c.vx < 0 ? -1 : 1);

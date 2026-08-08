@@ -13,10 +13,11 @@ Sea.DEPTH = {
   water: 0,
   far: 1,
   mid: 2,
-  floor: 3,
+  floor: 3, // terrain tiles
   flora: 4,
-  glow: 5, // additive glows for plants/creatures
   creature: 6,
+  darkness: 6.8, // depth-darkening overlay; glows and the sub sit above it
+  glow: 7.5, // additive glows for plants/creatures
   light: 8, // sub headlight cone
   sub: 9,
   fore: 12,
@@ -30,17 +31,18 @@ Sea.DEPTH = {
 Sea.makeWorldTextures = function (scene) {
   const rand = Sea.rng(0x5ea11fe);
 
-  // Vertical water gradient: faint moonlit blue up top, near-black below.
+  // Vertical water gradient: faint moonlit blue up top, near-black at
+  // 1000 m. Taller than the view; slides with camera depth.
   {
-    const tex = scene.textures.createCanvas('bgWater', 32, 450);
+    const tex = scene.textures.createCanvas('bgWater', 32, 600);
     const ctx = tex.getContext();
-    const grad = ctx.createLinearGradient(0, 0, 0, 450);
-    grad.addColorStop(0.0, '#122440');
-    grad.addColorStop(0.28, '#0a1628');
-    grad.addColorStop(0.7, '#050a18');
-    grad.addColorStop(1.0, '#03060e');
+    const grad = ctx.createLinearGradient(0, 0, 0, 600);
+    grad.addColorStop(0.0, '#14284a');
+    grad.addColorStop(0.14, '#0b1a30');
+    grad.addColorStop(0.45, '#060d1c');
+    grad.addColorStop(1.0, '#020409');
     ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, 32, 450);
+    ctx.fillRect(0, 0, 32, 600);
     tex.refresh();
   }
 
@@ -115,23 +117,6 @@ Sea.makeWorldTextures = function (scene) {
     tex.refresh();
   }
 
-  // Seafloor sand tile.
-  {
-    const tex = scene.textures.createCanvas('sand', 64, 64);
-    const ctx = tex.getContext();
-    ctx.fillStyle = '#0d1626';
-    ctx.fillRect(0, 0, 64, 64);
-    ctx.fillStyle = '#1e2e4e';
-    ctx.fillRect(0, 0, 64, 2);
-    ctx.fillStyle = '#15223c';
-    ctx.fillRect(0, 2, 64, 2);
-    for (let i = 0; i < 42; i++) {
-      ctx.fillStyle = rand() < 0.3 ? '#1c2c4a' : '#111c30';
-      ctx.fillRect(Math.floor(rand() * 64), 6 + Math.floor(rand() * 56), 2, 1);
-    }
-    tex.refresh();
-  }
-
   // Rock variants: blobby shaded lumps.
   for (let v = 0; v < 3; v++) {
     const w = 16 + v * 8;
@@ -198,6 +183,23 @@ Sea.makeWorldTextures = function (scene) {
         Math.max(1, s - 1 - Math.floor(rand() * 2))
       );
     }
+    tex.refresh();
+  }
+
+  // Sonar ping ring.
+  {
+    const s = 96;
+    const tex = scene.textures.createCanvas('ring', s, s);
+    const ctx = tex.getContext();
+    ctx.strokeStyle = 'rgba(159,216,255,0.9)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(s / 2, s / 2, s / 2 - 2, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(159,216,255,0.25)';
+    ctx.beginPath();
+    ctx.arc(s / 2, s / 2, s / 2 - 6, 0, Math.PI * 2);
+    ctx.stroke();
     tex.refresh();
   }
 
@@ -327,12 +329,12 @@ Sea.buildWorld = function (scene) {
     .setOrigin(0, 0)
     .setDepth(Sea.DEPTH.water)
     .setScrollFactor(0);
-  water.setDisplaySize(view.w, 450);
+  water.setDisplaySize(view.w, 600);
   scene.parallax = [];
   scene.parallax.push({
     obj: water,
     update() {
-      water.y = -((450 - view.h) * (cam.scrollY / maxScrollY));
+      water.y = -((600 - view.h) * (cam.scrollY / maxScrollY));
     },
   });
 
@@ -356,64 +358,28 @@ Sea.buildWorld = function (scene) {
   addSilhouette('bgFar', Sea.DEPTH.far, 0.1, 20, 0.1);
   addSilhouette('bgMid', Sea.DEPTH.mid, 0.32, 16, 0.24);
 
-  // Seafloor (true world space).
-  scene.add
-    .tileSprite(0, W.height - 64, W.width, 64, 'sand')
-    .setOrigin(0, 0)
-    .setDepth(Sea.DEPTH.floor);
+  Sea.decorateTerrain(scene, rand);
+};
 
-  const floorY = W.height - 62;
-
-  // Rocks: scattered singles and small piles.
-  for (let x = 60; x < W.width - 60; x += 90 + rand() * 260) {
-    const v = Math.floor(rand() * 3);
-    scene.add
-      .image(x, floorY + 2 + rand() * 6, 'rock' + v)
-      .setOrigin(0.5, 1)
-      .setDepth(Sea.DEPTH.floor + (rand() < 0.5 ? -0.1 : 0.1))
-      .setFlipX(rand() < 0.5);
-    if (rand() < 0.35) {
-      scene.add
-        .image(x + 8 + rand() * 14, floorY + 6, 'rock' + Math.floor(rand() * 2))
-        .setOrigin(0.5, 1)
-        .setDepth(Sea.DEPTH.floor + 0.2)
-        .setFlipX(rand() < 0.5);
-    }
-  }
-
-  // Kelp: swaying strands, singly and in beds.
-  for (let x = 140; x < W.width - 140; x += 120 + rand() * 420) {
-    const count = rand() < 0.4 ? 3 + Math.floor(rand() * 3) : 1;
-    for (let i = 0; i < count; i++) {
-      const kelp = scene.add
-        .image(x + i * (8 + rand() * 10), floorY + 4, 'kelp' + Math.floor(rand() * 2))
-        .setOrigin(0.5, 1)
-        .setDepth(Sea.DEPTH.flora)
-        .setFlipX(rand() < 0.5);
-      scene.tweens.add({
-        targets: kelp,
-        angle: { from: -3 - rand() * 2, to: 3 + rand() * 2 },
-        scaleX: { from: 0.92, to: 1.05 },
-        duration: 2400 + rand() * 1600,
-        delay: rand() * 2000,
-        yoyo: true,
-        repeat: -1,
-        ease: 'Sine.easeInOut',
-      });
-    }
-  }
-
-  // Bioluminescent plants: bulbs plus a tinted additive glow that breathes.
+/*
+ * Scatter life over the generated terrain: kelp on shallow ledges, rocks
+ * anywhere, bioluminescent plants growing denser with depth (including a
+ * few hanging from cave ceilings).
+ */
+Sea.decorateTerrain = function (scene, rand) {
   const glowTints = [0x7dffd8, 0xc08cff, 0x6ab8ff];
-  for (let x = 200; x < W.width - 200; x += 260 + rand() * 520) {
+  const surfaces = Sea.terrain.surfaces;
+  const ceilings = Sea.terrain.ceilings;
+
+  const addGlowPlant = (x, y, flip) => {
     const v = Math.floor(rand() * 3);
-    const px = x + rand() * 60;
     scene.add
-      .image(px, floorY + 6, 'glowplant' + v)
+      .image(x, y, 'glowplant' + v)
       .setOrigin(0.5, 1)
-      .setDepth(Sea.DEPTH.flora + 0.1);
+      .setDepth(Sea.DEPTH.flora + 0.1)
+      .setFlipY(flip);
     const glow = scene.add
-      .image(px, floorY - 2, 'orb')
+      .image(x, y + (flip ? 6 : -6), 'orb')
       .setDepth(Sea.DEPTH.glow)
       .setBlendMode(Phaser.BlendModes.ADD)
       .setTint(glowTints[v])
@@ -429,6 +395,41 @@ Sea.buildWorld = function (scene) {
       repeat: -1,
       ease: 'Sine.easeInOut',
     });
+  };
+
+  for (const s of surfaces) {
+    const roll = rand();
+    if (s.m < 480 && roll < 0.055) {
+      // kelp holds to the shallower ledges
+      const kelp = scene.add
+        .image(s.x, s.y + 4, 'kelp' + Math.floor(rand() * 2))
+        .setOrigin(0.5, 1)
+        .setDepth(Sea.DEPTH.flora)
+        .setFlipX(rand() < 0.5);
+      scene.tweens.add({
+        targets: kelp,
+        angle: { from: -3 - rand() * 2, to: 3 + rand() * 2 },
+        scaleX: { from: 0.92, to: 1.05 },
+        duration: 2400 + rand() * 1600,
+        delay: rand() * 2000,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut',
+      });
+    } else if (roll < 0.1) {
+      scene.add
+        .image(s.x, s.y + 3, 'rock' + Math.floor(rand() * 3))
+        .setOrigin(0.5, 1)
+        .setDepth(Sea.DEPTH.floor + 0.1)
+        .setFlipX(rand() < 0.5);
+    } else if (roll < 0.1 + 0.02 + (s.m / 1000) * 0.075) {
+      // bioluminescence thickens with depth
+      addGlowPlant(s.x, s.y + 2, false);
+    }
+  }
+
+  for (const c of ceilings) {
+    if (c.m > 420 && rand() < 0.03) addGlowPlant(c.x, c.y - 2, true);
   }
 };
 
@@ -493,6 +494,15 @@ Sea.buildAtmosphere = function (scene) {
     },
   });
 
+  // Depth darkness: dims the world as you sink, while glows, the sub and
+  // its headlight (all layered above it) cut through.
+  scene.darkness = scene.add
+    .rectangle(0, 0, view.w, view.h, 0x010308)
+    .setOrigin(0, 0)
+    .setDepth(Sea.DEPTH.darkness)
+    .setScrollFactor(0)
+    .setAlpha(0);
+
   // Vignette hugging the screen edges.
   scene.add
     .image(0, 0, 'vignette')
@@ -533,5 +543,10 @@ Sea.updateWorld = function (scene) {
       scene.subBody.x - scene.facing * 15,
       scene.subBody.y + 1
     );
+  }
+  if (scene.waves) scene.waves.tilePositionX += 0.12;
+  if (scene.darkness && scene.subBody) {
+    const m = Sea.depthAt(scene.subBody.y);
+    scene.darkness.setAlpha(Phaser.Math.Clamp((m - 120) / 880, 0, 1) * 0.32);
   }
 };

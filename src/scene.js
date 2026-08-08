@@ -7,8 +7,6 @@
 
 window.Sea = window.Sea || {};
 
-Sea.WORLD = { width: 7200, height: 900 };
-
 Sea.SceneMain = class extends Phaser.Scene {
   constructor() {
     super('sea');
@@ -17,25 +15,87 @@ Sea.SceneMain = class extends Phaser.Scene {
   create() {
     Sea._scene = this; // debug/testing handle
     const W = Sea.WORLD;
+    Sea.state = { paused: false, docked: false };
 
     Sea.makeSubTextures(this);
     Sea.makeWorldTextures(this);
     Sea.makeCreatureTextures(this);
+    Sea.makeSurfaceTextures(this);
+    Sea.generateTerrain(this);
 
-    // Keep the sub inside the water column: below the surface, above the floor.
-    this.physics.world.setBounds(24, 30, W.width - 48, W.height - 30 - 70);
+    // Keep the sub inside the water column: below the surface, above bedrock.
+    const top = Sea.SURFACE_Y + 6;
+    this.physics.world.setBounds(24, top, W.width - 48, W.height - top - 24);
     this.cameras.main.setBounds(0, 0, W.width, W.height);
 
     Sea.buildWorld(this);
+    Sea.buildSurface(this);
     Sea.spawnCreatures(this);
-    this.buildSub(200, W.height * 0.55);
+    this.buildSub(Sea.STATION_X - 70, Sea.SURFACE_Y + 70);
     Sea.buildAtmosphere(this);
+    Sea.applyUpgrades(this);
 
-    this.keys = this.input.keyboard.addKeys('W,A,S,D,UP,LEFT,DOWN,RIGHT');
+    this.physics.add.collider(this.subBody, Sea.terrain.layer);
+
+    this.keys = this.input.keyboard.addKeys('W,A,S,D,UP,LEFT,DOWN,RIGHT,E');
+    this.dockCooldown = 0;
+    this.canDock = false;
+    this.limitHit = false;
+
+    // Active sonar ping (top sonar tier only).
+    this.time.addEvent({
+      delay: 4500,
+      loop: true,
+      callback: () => {
+        if (Sea.tierDef('sonar').ping) this.firePing();
+      },
+    });
 
     const cam = this.cameras.main;
     cam.startFollow(this.subBody, false, 0.06, 0.06);
     cam.setDeadzone(36, 24);
+
+    this.scene.launch('ui');
+  }
+
+  firePing() {
+    const ring = this.add
+      .image(this.subBody.x, this.subBody.y, 'ring')
+      .setDepth(Sea.DEPTH.glow + 0.2)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setScale(0.5)
+      .setAlpha(0.75);
+    const wash = this.add
+      .image(this.subBody.x, this.subBody.y, 'orb')
+      .setDepth(Sea.DEPTH.glow + 0.1)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setTint(0x8fd0ff)
+      .setScale(1.5)
+      .setAlpha(0.3);
+    this.tweens.add({
+      targets: ring,
+      scale: 9.5,
+      alpha: 0,
+      duration: 2600,
+      ease: 'Sine.easeOut',
+      onComplete: () => ring.destroy(),
+    });
+    this.tweens.add({
+      targets: wash,
+      scale: 12,
+      alpha: 0,
+      duration: 2400,
+      ease: 'Sine.easeOut',
+      onComplete: () => wash.destroy(),
+    });
+  }
+
+  dock() {
+    Sea.state.docked = true;
+    const body = this.subBody.body;
+    body.setVelocity(0, 0);
+    body.setAcceleration(0, 0);
+    this.scene.pause();
   }
 
   buildSub(x, y) {
@@ -76,6 +136,7 @@ Sea.SceneMain = class extends Phaser.Scene {
     body.setSize(28, 14);
     body.setOffset(-14, -7);
     body.setCollideWorldBounds(true);
+    body.setBounce(0.16, 0.16); // soft nudge off the rock, never a hard stop
     // Damping drag: fraction of velocity kept per second — floaty glide.
     body.setDamping(true);
     body.setDrag(0.28, 0.28);
@@ -118,8 +179,32 @@ Sea.SceneMain = class extends Phaser.Scene {
     if (ax > 0) this.facing = 1;
     else if (ax < 0) this.facing = -1;
     this.subSprite.setFlipX(this.facing < 0);
-    this.subCone.setScale(this.facing, 1);
+    this.subCone.setScale(this.facing * this.coneScale, this.coneScale);
     this.subCone.x = 11 * this.facing;
+
+    // Soft depth limit: past the hull rating, buoyancy wins.
+    const ratingY = Sea.SURFACE_Y + Sea.tierDef('depth').rating * Sea.PX_PER_M;
+    const overshoot = this.subBody.y - ratingY;
+    this.limitHit = overshoot > -8;
+    if (overshoot > 0) {
+      body.setVelocityY(
+        Math.min(body.velocity.y, -Math.min(overshoot * 2.2, 42))
+      );
+    }
+
+    // Docking with the station.
+    if (this.dockCooldown > 0) this.dockCooldown -= delta;
+    const dockDist = Phaser.Math.Distance.Between(
+      this.subBody.x,
+      this.subBody.y,
+      Sea.stationDock.x,
+      Sea.stationDock.y
+    );
+    this.canDock = dockDist < 85 && this.dockCooldown <= 0;
+    if (this.canDock && Phaser.Input.Keyboard.JustDown(this.keys.E)) {
+      this.dock();
+      return;
+    }
 
     // Tilt the nose toward vertical travel; mirrored when facing left.
     const tilt = Phaser.Math.Clamp(body.velocity.y * 0.0032, -0.34, 0.34);

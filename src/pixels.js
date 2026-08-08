@@ -7,6 +7,17 @@
 
 window.Sea = window.Sea || {};
 
+/*
+ * World geometry. The water column below SURFACE_Y maps to 0–1000 m of
+ * depth at PX_PER_M pixels per meter; the last rows are bedrock.
+ */
+Sea.WORLD = { width: 7200, height: 2960 };
+Sea.SURFACE_Y = 100;
+Sea.PX_PER_M = 2.8; // 1000 m of water ends at y = 100 + 2800
+Sea.MAX_DEPTH_M = 1000;
+
+Sea.depthAt = (y) => Math.max(0, (y - Sea.SURFACE_Y) / Sea.PX_PER_M);
+
 // Deterministic RNG (mulberry32) so the world lays out the same every visit.
 Sea.rng = function (seed) {
   let a = seed >>> 0;
