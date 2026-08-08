@@ -27,11 +27,16 @@ npx serve .        # or: python3 -m http.server
 | `A` / `←` | Thrust left                             |
 | `S` / `↓` | Thrust down                             |
 | `D` / `→` | Thrust right                            |
+| `F`       | Photograph wildlife in view             |
 | `E`       | Dock with the station (when close)      |
 | `P`       | Pause / unpause                         |
+| `M`       | Mute / unmute the ambience              |
 | `Esc`     | Undock / unpause                        |
 
-The sub has momentum and drag — ease into turns and let it glide.
+The sub has momentum and drag — ease into turns and let it glide. A
+procedural lofi ambience (gliding seventh-chord pad, deep-water wash,
+vinyl crackle, sparse plinks) starts on your first key press and darkens
+as you dive — all synthesized in WebAudio, no audio files.
 
 ## The dive
 
@@ -51,8 +56,35 @@ free while the boat is in sea trials, click to fit:
   (longer range) → active ping (a visible pulse that sweeps the terrain)
 - **Minimap** — local chart → regional chart → full survey of the trench
 
-Equipment persists in `localStorage`; there's a "reset save" link in the
-station menu.
+- **Salvage** — winch (recover salvage) → mag-grapple (longer reach)
+
+Equipment, money, photos and recovered salvage persist in `localStorage`;
+there's a "reset save" link in the station menu.
+
+## Earning money
+
+The running total lives in the top-right of the HUD (the minimap sits
+bottom-left). Two trades:
+
+**Wildlife photography** (`F`) — snaps anything in view within ~270px.
+Each animal pays once; rarer subjects pay more:
+
+| Subject            | Fee    |
+| ------------------ | ------ |
+| Reef school        | $15    |
+| Garibaldi school   | $25    |
+| Moonfish school    | $40    |
+| Jellyfish          | $30    |
+| Sea turtle         | $80    |
+| ???                | $1,200 |
+
+Something huge and golden patrols the bedrock trenches below 900 m. You'll
+need the full hull rating to reach it.
+
+**Salvage** — lost cargo winks in the dark on ledges all the way down:
+cargo crates ($25) in the shallows, amphorae ($60) mid-water, sea chests
+($150) in the caves, gold ingots ($300) by the bedrock. You'll need the
+salvage winch fitted at the station to recover any of it.
 
 ## Project layout
 
@@ -64,8 +96,10 @@ src/pixels.js         world constants + pixel-art helpers + the submarine
 src/terrain.js        noise-carved rock, caves & trenches, collision, chart
 src/world.js          water gradient, parallax layers, flora, atmosphere
 src/station.js        night sky, waterline, the floating surface station
-src/creatures.js      fish schools, jellyfish, sea turtles
-src/ui.js             equipment/save, depth gauge, minimap, menus (HUD scene)
+src/creatures.js      fish schools, jellyfish, sea turtles, the megalodon
+src/salvage.js        recoverable cargo scattered over the terrain
+src/audio.js          procedural lofi ambience + SFX (pure WebAudio)
+src/ui.js             equipment/save, money, depth gauge, minimap, menus
 src/scene.js          the ocean scene tying it all together
 ```
 

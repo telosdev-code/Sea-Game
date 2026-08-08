@@ -31,16 +31,20 @@ Sea.SceneMain = class extends Phaser.Scene {
     Sea.buildWorld(this);
     Sea.buildSurface(this);
     Sea.spawnCreatures(this);
+    Sea.makeSalvageTextures(this);
+    Sea.spawnSalvage(this);
     this.buildSub(Sea.STATION_X - 70, Sea.SURFACE_Y + 70);
     Sea.buildAtmosphere(this);
     Sea.applyUpgrades(this);
+    Sea.Audio.attach(this);
 
     this.physics.add.collider(this.subBody, Sea.terrain.layer);
 
-    this.keys = this.input.keyboard.addKeys('W,A,S,D,UP,LEFT,DOWN,RIGHT,E');
+    this.keys = this.input.keyboard.addKeys('W,A,S,D,UP,LEFT,DOWN,RIGHT,E,F');
     this.dockCooldown = 0;
     this.canDock = false;
     this.limitHit = false;
+    this.photoCooldown = 0;
 
     // Active sonar ping (top sonar tier only).
     this.time.addEvent({
@@ -58,7 +62,39 @@ Sea.SceneMain = class extends Phaser.Scene {
     this.scene.launch('ui');
   }
 
+  /*
+   * Snap a photo: any un-photographed wildlife close enough to the sub
+   * and inside the camera's view is captured and paid out.
+   */
+  takePhoto() {
+    if (this.photoCooldown > 0) return;
+    this.photoCooldown = 900;
+    this.scene.get('ui').photoFlash();
+    Sea.Audio.shutter();
+
+    const cam = this.cameras.main;
+    const view = cam.worldView;
+    let shots = 0;
+    for (const c of this.creatures) {
+      if (Sea.save.photographed.includes(c.id)) continue;
+      const cx = c.type === 'school' ? c.x : c.spr.x;
+      const cy = c.type === 'school' ? c.y : c.spr.y;
+      if (!view.contains(cx, cy)) continue;
+      const d = Phaser.Math.Distance.Between(this.subBody.x, this.subBody.y, cx, cy);
+      if (d > 270) continue;
+      const info = Sea.SPECIES[c.species];
+      Sea.addMoney(this, info.value, info.name, cx, cy - 16);
+      Sea.save.photographed.push(c.id);
+      shots++;
+    }
+    if (shots > 0) {
+      Sea.storeSave();
+      Sea.Audio.coin();
+    }
+  }
+
   firePing() {
+    Sea.Audio.ping();
     const ring = this.add
       .image(this.subBody.x, this.subBody.y, 'ring')
       .setDepth(Sea.DEPTH.glow + 0.2)
@@ -205,6 +241,13 @@ Sea.SceneMain = class extends Phaser.Scene {
       this.dock();
       return;
     }
+
+    // wildlife photography
+    if (this.photoCooldown > 0) this.photoCooldown -= delta;
+    if (Phaser.Input.Keyboard.JustDown(this.keys.F)) this.takePhoto();
+
+    Sea.updateSalvage(this);
+    Sea.Audio.setDepth(Sea.depthAt(this.subBody.y));
 
     // Tilt the nose toward vertical travel; mirrored when facing left.
     const tilt = Phaser.Math.Clamp(body.velocity.y * 0.0032, -0.34, 0.34);

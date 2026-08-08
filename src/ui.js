@@ -49,26 +49,79 @@ Sea.UPGRADES = {
       { label: 'Full survey', window: 0 },
     ],
   },
+  salvage: {
+    name: 'SALVAGE',
+    tiers: [
+      { label: 'Not fitted', radius: 0 },
+      { label: 'Salvage winch', radius: 48 },
+      { label: 'Mag-grapple', radius: 95 },
+    ],
+  },
 };
 
 Sea.SAVE_KEY = 'abyssal-drift-save-v1';
 
-Sea.defaultSave = () => ({ depth: 0, lights: 0, sonar: 0, minimap: 0 });
+Sea.defaultSave = () => ({
+  depth: 0,
+  lights: 0,
+  sonar: 0,
+  minimap: 0,
+  salvage: 0,
+  money: 0,
+  muted: false,
+  photographed: [],
+  salvaged: [],
+});
 
 Sea.loadSave = function () {
+  const save = Sea.defaultSave();
   try {
     const raw = JSON.parse(localStorage.getItem(Sea.SAVE_KEY));
-    const save = Sea.defaultSave();
-    for (const key of Object.keys(save)) {
+    for (const key of Object.keys(Sea.UPGRADES)) {
       const max = Sea.UPGRADES[key].tiers.length - 1;
       if (Number.isInteger(raw[key])) {
         save[key] = Phaser.Math.Clamp(raw[key], 0, max);
       }
     }
-    return save;
+    if (Number.isFinite(raw.money) && raw.money >= 0) {
+      save.money = Math.floor(raw.money);
+    }
+    save.muted = !!raw.muted;
+    for (const listKey of ['photographed', 'salvaged']) {
+      if (Array.isArray(raw[listKey])) {
+        save[listKey] = raw[listKey].filter((v) => typeof v === 'string');
+      }
+    }
   } catch (e) {
-    return Sea.defaultSave();
+    /* fresh save */
   }
+  return save;
+};
+
+/*
+ * Award money: bump the persistent total and float a "+$n label" popup in
+ * the world at (x, y).
+ */
+Sea.addMoney = function (scene, value, label, x, y) {
+  Sea.save.money += value;
+  Sea.storeSave();
+  const big = value >= 1000;
+  const popup = scene.add
+    .text(x, y, '+$' + value + '  ' + label, {
+      fontFamily: 'monospace',
+      fontSize: big ? '12px' : '8px',
+      color: big ? '#ffd24a' : '#ffe8a0',
+    })
+    .setOrigin(0.5, 1)
+    .setDepth(Sea.DEPTH.fore + 1);
+  scene.tweens.add({
+    targets: popup,
+    y: y - 22,
+    alpha: { from: 1, to: 0 },
+    duration: big ? 2600 : 1500,
+    ease: 'Sine.easeOut',
+    onComplete: () => popup.destroy(),
+  });
 };
 
 Sea.storeSave = function () {
@@ -95,6 +148,7 @@ Sea.buyUpgrade = function (key) {
   Sea.save[key] += 1;
   Sea.storeSave();
   if (Sea._scene) Sea.applyUpgrades(Sea._scene);
+  Sea.Audio.install();
   return true;
 };
 
@@ -135,14 +189,47 @@ Sea.SceneUI = class extends Phaser.Scene {
     Sea.pixelTexture(this, 'blip', [['XX', 'XX']], { X: '#ffffff' });
 
     this.buildGauge(W, H);
-    this.buildMinimap(W);
+    this.buildMinimap(W, H);
+    this.buildMoney(W);
     this.buildArrow();
     this.buildPrompt(W, H);
     this.buildPauseOverlay(W, H);
     this.buildMenu(W, H);
 
-    this.keys = this.input.keyboard.addKeys('P,ESC');
+    // photo flash overlay
+    this.flash = this.add
+      .rectangle(0, 0, W, H, 0xffffff)
+      .setOrigin(0)
+      .setAlpha(0)
+      .setDepth(9);
+
+    this.keys = this.input.keyboard.addKeys('P,ESC,M');
     this.menuOpen = false;
+  }
+
+  photoFlash() {
+    this.flash.setAlpha(0.55);
+    this.tweens.add({ targets: this.flash, alpha: 0, duration: 220 });
+  }
+
+  buildMoney(W) {
+    this.shownMoney = Sea.save.money;
+    this.moneyText = this.add
+      .text(W - 8, 9, '$ 0', {
+        fontFamily: 'monospace',
+        fontSize: '11px',
+        color: '#ffd24a',
+      })
+      .setOrigin(1, 0)
+      .setDepth(6);
+    this.moneyLabel = this.add
+      .text(W - 8, 22, 'earned', {
+        fontFamily: 'monospace',
+        fontSize: '6px',
+        color: '#8a7434',
+      })
+      .setOrigin(1, 0)
+      .setDepth(6);
   }
 
   /* ---------------- depth gauge ---------------- */
@@ -188,8 +275,8 @@ Sea.SceneUI = class extends Phaser.Scene {
 
   /* ---------------- minimap ---------------- */
 
-  buildMinimap(W) {
-    this.mapBox = { x: W - 132 - 8, y: 8, w: 124, h: 58 };
+  buildMinimap(W, H) {
+    this.mapBox = { x: 8, y: H - 58 - 8, w: 124, h: 58 };
     const b = this.mapBox;
     this.add
       .rectangle(b.x - 2, b.y - 2, b.w + 4, b.h + 4, 0x050b16, 0.88)
@@ -247,11 +334,12 @@ Sea.SceneUI = class extends Phaser.Scene {
     this.mapImg.x = b.x - cropX * s + (tier.window === 0 ? (b.w - t.cols * s) / 2 : 0);
     this.mapImg.y = b.y - cropY * s + (tier.window === 0 ? (b.h - t.rows * s) / 2 : 0);
 
-    const place = (blip, wx, wy, tint, scale) => {
+    const place = (blip, wx, wy, tint, scale, alpha) => {
       blip
         .setVisible(true)
         .setTint(tint)
         .setScale(scale)
+        .setAlpha(alpha === undefined ? 1 : alpha)
         .setPosition(
           Phaser.Math.Clamp(this.mapImg.x + wx * toMap * s, b.x + 1, b.x + b.w - 1),
           Phaser.Math.Clamp(this.mapImg.y + wy * toMap * s, b.y + 1, b.y + b.h - 1)
@@ -268,18 +356,30 @@ Sea.SceneUI = class extends Phaser.Scene {
     used++;
     place(this.blips[used++], Sea.stationDock.x, Sea.stationDock.y - 30, 0xffb84a, 1.4);
 
-    // sonar contacts
+    // sonar contacts — photographed wildlife shows dimmer
     const range = Sea.tierDef('sonar').range;
     if (range > 0 && sea.creatures) {
+      const tints = {
+        school: 0x66e0d0,
+        jelly: 0xc890f0,
+        turtle: 0x7ad86a,
+        meg: 0xffd24a,
+      };
       for (const c of sea.creatures) {
         if (used >= this.blips.length) break;
         const cx = c.type === 'school' ? c.x : c.spr.x;
         const cy = c.type === 'school' ? c.y : c.spr.y;
         const d = Phaser.Math.Distance.Between(sea.subBody.x, sea.subBody.y, cx, cy);
         if (d > range) continue;
-        const tint =
-          c.type === 'school' ? 0x66e0d0 : c.type === 'jelly' ? 0xc890f0 : 0x7ad86a;
-        place(this.blips[used++], cx, cy, tint, 0.8);
+        const shot = Sea.save.photographed.includes(c.id);
+        place(
+          this.blips[used++],
+          cx,
+          cy,
+          tints[c.type],
+          c.type === 'meg' ? 1.5 : 0.8,
+          shot ? 0.4 : 1
+        );
       }
     }
     for (let i = used; i < this.blips.length; i++) this.blips[i].setVisible(false);
@@ -301,12 +401,20 @@ Sea.SceneUI = class extends Phaser.Scene {
       .setOrigin(0.5)
       .setVisible(false);
     this.pauseHint = this.add
-      .text(6, H - 12, 'P — pause', {
+      .text(140, H - 12, 'F photo · P pause · M sound', {
         fontFamily: 'monospace',
         fontSize: '7px',
         color: '#44608a',
       })
       .setOrigin(0, 0.5);
+    this.salvageHintText = this.add
+      .text(W / 2, H - 48, 'salvage winch required — fit one at the station', {
+        fontFamily: 'monospace',
+        fontSize: '8px',
+        color: '#d8a86a',
+      })
+      .setOrigin(0.5)
+      .setVisible(false);
   }
 
   buildPauseOverlay(W, H) {
@@ -361,10 +469,19 @@ Sea.SceneUI = class extends Phaser.Scene {
       .setOrigin(0.5);
     this.menu.add([dim, panel, title, sub]);
 
+    this.menuBalance = this.add
+      .text(W / 2 + 200, 28, '', {
+        fontFamily: 'monospace',
+        fontSize: '9px',
+        color: '#ffd24a',
+      })
+      .setOrigin(1, 0.5);
+    this.menu.add(this.menuBalance);
+
     this.menuRows = {};
-    const keys = ['depth', 'lights', 'sonar', 'minimap'];
+    const keys = ['depth', 'lights', 'sonar', 'minimap', 'salvage'];
     keys.forEach((key, i) => {
-      const y = 58 + i * 36;
+      const y = 54 + i * 31;
       const def = Sea.UPGRADES[key];
       const name = this.add.text(44, y, def.name, {
         fontFamily: 'monospace',
@@ -438,6 +555,7 @@ Sea.SceneUI = class extends Phaser.Scene {
   }
 
   refreshMenu() {
+    this.menuBalance.setText('$ ' + Sea.save.money.toLocaleString());
     for (const key of Object.keys(this.menuRows)) {
       const row = this.menuRows[key];
       const def = Sea.UPGRADES[key];
@@ -486,10 +604,25 @@ Sea.SceneUI = class extends Phaser.Scene {
     if (!sea.subBody || !Sea.terrain) return;
 
     if (Phaser.Input.Keyboard.JustDown(this.keys.P)) this.togglePause();
+    if (Phaser.Input.Keyboard.JustDown(this.keys.M)) {
+      const nowMuted = Sea.Audio.toggleMute();
+      this.pauseHint.setText(
+        'F photo · P pause · M sound' + (nowMuted ? ' (off)' : '')
+      );
+    }
     if (Phaser.Input.Keyboard.JustDown(this.keys.ESC)) {
       if (Sea.state.docked) this.undock();
       else if (Sea.state.paused) this.togglePause();
     }
+
+    // running money total, counting up smoothly
+    this.shownMoney += (Sea.save.money - this.shownMoney) * 0.12;
+    if (Math.abs(Sea.save.money - this.shownMoney) < 1) {
+      this.shownMoney = Sea.save.money;
+    }
+    this.moneyText.setText('$ ' + Math.round(this.shownMoney).toLocaleString());
+
+    this.salvageHintText.setVisible(!!sea.salvageHint && !Sea.state.docked);
 
     // dock menu follows the docked state set by the sea scene
     if (Sea.state.docked && !this.menuOpen) this.openMenu();

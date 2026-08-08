@@ -36,7 +36,10 @@ Sea.rng = function (seed) {
  * Characters index into `palette`; anything not in the palette is transparent.
  */
 Sea.pixelTexture = function (scene, key, frames, palette) {
-  const w = frames[0][0].length;
+  let w = 0;
+  for (const rows of frames) {
+    for (const row of rows) w = Math.max(w, row.length);
+  }
   const h = frames[0].length;
   const tex = scene.textures.createCanvas(key, w * frames.length, h);
   const ctx = tex.getContext();

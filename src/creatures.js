@@ -8,6 +8,16 @@
 
 window.Sea = window.Sea || {};
 
+/* Photo prices: rarer wildlife pays better. */
+Sea.SPECIES = {
+  school0: { name: 'reef school', value: 15 },
+  school1: { name: 'garibaldi school', value: 25 },
+  school2: { name: 'moonfish school', value: 40 },
+  jelly: { name: 'jellyfish', value: 30 },
+  turtle: { name: 'sea turtle', value: 80 },
+  meg: { name: 'GOLDEN MEGALODON', value: 1200 },
+};
+
 /* ------------------------------------------------------------------ */
 /* Textures                                                           */
 /* ------------------------------------------------------------------ */
@@ -138,6 +148,63 @@ Sea.makeCreatureTextures = function (scene) {
     frameRate: 1.6,
     repeat: -1,
   });
+
+  // The golden megalodon: a huge gilded shark that haunts the bedrock
+  // trenches. Two frames, tail sweeping. Facing right.
+  const megPal = {
+    O: '#2a1c06',
+    G: '#e8c04a', // gold hide
+    g: '#c89c30', // gold shade
+    L: '#f8e8a8', // belly
+    F: '#b08828', // fins
+    E: '#1a1208', // eye
+    W: '#fff8d8', // glint / teeth
+  };
+  const megFrames = [
+    [
+      '....O...................OOO.....................',
+      '...OFO................OOGGGOO...................',
+      '...OFFO.............OOGGGGGGGOO.................',
+      '....OFFO...........OGGGGGGGGGGGOOOO.............',
+      '....OFFOO.......OOOGGGGGGGGGGGGGGGGOOOO.........',
+      '.....OFFFOOOOOOOGGGGGGGGGGGGGGGGGGGGGGGOOO......',
+      '.....OFGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGOO.....',
+      '....OGGGGGGGGGGGGGGGGGGGGGGGGgGGgGGgGGEGGGO.....',
+      '...OGGGGGGGGGGGGGGGGGGGGGGGGGGgGGgGGgGGGGGGO....',
+      '..OLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLOWWWWWO.....',
+      '..OLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLOOOOOOO......',
+      '...OLLLLLOOOLLLLLLLOFFOLLLLLLLOOOOO.............',
+      '....OOOOO..OOOOLLLLOFFFOLLOOOO..................',
+      '................OOOOFFFFOOO.....................',
+      '.....................OFFO.......................',
+      '......................OO........................',
+    ],
+    [
+      '......................OOO.......................',
+      '....................OOGGGOO.....................',
+      '..O.................OGGGGGGGOO..................',
+      '..OFO..............OGGGGGGGGGGGOOOO.............',
+      '..OFFOO.........OOOGGGGGGGGGGGGGGGGOOOO.........',
+      '...OFFFOOOOOOOOGGGGGGGGGGGGGGGGGGGGGGGGOOO......',
+      '....OFGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGOO.....',
+      '....OGGGGGGGGGGGGGGGGGGGGGGGGgGGgGGgGGEGGGO.....',
+      '...OGGGGGGGGGGGGGGGGGGGGGGGGGGgGGgGGgGGGGGGO....',
+      '..OLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLOWWWWWO.....',
+      '.OLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLOOOOOOO........',
+      '.OLLLLLLOOOLLLLLLLLOFFOLLLLLLLOOOOO.............',
+      '..OOOOOO...OOOOLLLLOFFFOLLOOOO..................',
+      '...............OOOOFFFFOOO......................',
+      '....................OFFO........................',
+      '.....................OO.........................',
+    ],
+  ];
+  Sea.pixelTexture(scene, 'meg', megFrames, megPal);
+  scene.anims.create({
+    key: 'meg-swim',
+    frames: [{ key: 'meg', frame: 0 }, { key: 'meg', frame: 1 }],
+    frameRate: 1.4,
+    repeat: -1,
+  });
 };
 
 /* ------------------------------------------------------------------ */
@@ -164,7 +231,11 @@ Sea.spawnCreatures = function (scene) {
       wanderPhase: rand() * 100,
       fish: [],
     };
-    const variant = Math.floor(rand() * 3);
+    // weighted rarity: moonfish schools are the scarce ones
+    const roll = rand();
+    const variant = roll < 0.45 ? 0 : roll < 0.8 ? 1 : 2;
+    school.id = 'school' + s;
+    school.species = 'school' + variant;
     const count = 5 + Math.floor(rand() * 5);
     for (let i = 0; i < count; i++) {
       const spr = scene.add
@@ -205,6 +276,8 @@ Sea.spawnCreatures = function (scene) {
       .setAlpha(0.34);
     scene.creatures.push({
       type: 'jelly',
+      id: 'jelly' + j,
+      species: 'jelly',
       spr,
       glow,
       baseX: x,
@@ -226,9 +299,45 @@ Sea.spawnCreatures = function (scene) {
       .play('turtle-swim');
     scene.creatures.push({
       type: 'turtle',
+      id: 'turtle' + t,
+      species: 'turtle',
       spr,
       vx: (10 + rand() * 5) * dir,
       baseY: spr.y,
+      phase: rand() * Math.PI * 2,
+    });
+  }
+
+  // The golden megalodon: one, at the bottom of the world.
+  let megSpot = Sea.openSpot(rand, 880, 975, 60);
+  if (!megSpot) megSpot = Sea.openSpot(rand, 840, 985, 42);
+  if (megSpot) {
+    const spr = scene.add
+      .sprite(megSpot.x, megSpot.y, 'meg', 0)
+      .setDepth(Sea.DEPTH.creature + 0.2)
+      .play('meg-swim');
+    const glow = scene.add
+      .image(megSpot.x, megSpot.y, 'orb')
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setTint(0xffd24a)
+      .setScale(2.6)
+      .setAlpha(0.22)
+      .setDepth(Sea.DEPTH.glow);
+    scene.tweens.add({
+      targets: glow,
+      alpha: { from: 0.16, to: 0.3 },
+      duration: 2600,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
+    });
+    scene.creatures.push({
+      type: 'meg',
+      id: 'meg',
+      species: 'meg',
+      spr,
+      glow,
+      vx: 20,
       phase: rand() * Math.PI * 2,
     });
   }
@@ -308,6 +417,24 @@ Sea.updateCreatures = function (scene, time, deltaMs) {
       c.spr.setFlipX(c.vx < 0);
       c.spr.y = c.baseY + Math.sin(c.phase * 0.45) * 9;
       c.spr.rotation = Math.sin(c.phase * 0.45) * 0.06 * (c.vx < 0 ? -1 : 1);
+    } else if (c.type === 'meg') {
+      c.phase += dt;
+      c.spr.x += c.vx * dt;
+      if (c.spr.x < 400) c.vx = Math.abs(c.vx);
+      else if (c.spr.x > W.width - 400) c.vx = -Math.abs(c.vx);
+      if (Sea.isSolid(c.spr.x + Math.sign(c.vx) * 90, c.spr.y)) c.vx = -c.vx;
+      c.spr.setFlipX(c.vx < 0);
+      // hold to the bedrock band
+      const m = Sea.depthAt(c.spr.y);
+      let vy = Math.sin(c.phase * 0.35) * 7;
+      if (m < 870) vy += 10;
+      else if (m > 985) vy -= 10;
+      if (vy < 0 && Sea.isSolid(c.spr.x, c.spr.y - 40)) vy = 4;
+      else if (vy > 0 && Sea.isSolid(c.spr.x, c.spr.y + 40)) vy = -4;
+      c.spr.y += vy * dt;
+      c.spr.rotation = Math.sin(c.phase * 0.35) * 0.04 * (c.vx < 0 ? -1 : 1);
+      c.glow.x = c.spr.x;
+      c.glow.y = c.spr.y;
     }
   }
 };

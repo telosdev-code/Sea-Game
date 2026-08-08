@@ -147,12 +147,21 @@ Sea.makeWorldTextures = function (scene) {
     tex.refresh();
   }
 
-  // Plankton mote and bubble for the particle systems.
+  // Plankton mote and bubble for the particle systems (the mote doubles
+  // as a generic bright dot for glints).
   {
     const tex = scene.textures.createCanvas('mote', 2, 2);
     const ctx = tex.getContext();
     ctx.fillStyle = '#cfe8ff';
     ctx.fillRect(0, 0, 2, 2);
+    tex.refresh();
+  }
+  {
+    const tex = scene.textures.createCanvas('blipDot', 3, 3);
+    const ctx = tex.getContext();
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 1, 3, 1);
+    ctx.fillRect(1, 0, 1, 3);
     tex.refresh();
   }
   {
