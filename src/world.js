@@ -162,6 +162,60 @@ Sea.makeWorldTextures = function (scene) {
     tex.refresh();
   }
 
+  // Plankton mote and bubble for the particle systems.
+  {
+    const tex = scene.textures.createCanvas('mote', 2, 2);
+    const ctx = tex.getContext();
+    ctx.fillStyle = '#cfe8ff';
+    ctx.fillRect(0, 0, 2, 2);
+    tex.refresh();
+  }
+  {
+    const tex = scene.textures.createCanvas('bubble', 4, 4);
+    const ctx = tex.getContext();
+    ctx.fillStyle = '#9fd0e8';
+    ctx.fillRect(1, 0, 2, 1);
+    ctx.fillRect(1, 3, 2, 1);
+    ctx.fillRect(0, 1, 1, 2);
+    ctx.fillRect(3, 1, 1, 2);
+    ctx.fillStyle = '#e8f6ff';
+    ctx.fillRect(1, 1, 1, 1);
+    tex.refresh();
+  }
+
+  // Foreground drift: sparse dark debris that slides past faster than the
+  // world, hinting at water between the camera and the sub.
+  {
+    const tex = scene.textures.createCanvas('fgDebris', 1024, 256);
+    const ctx = tex.getContext();
+    for (let i = 0; i < 46; i++) {
+      const s = 2 + Math.floor(rand() * 4);
+      ctx.fillStyle = rand() < 0.7 ? 'rgba(2,6,16,0.6)' : 'rgba(10,20,40,0.5)';
+      ctx.fillRect(
+        Math.floor(rand() * 1024),
+        Math.floor(rand() * 256),
+        s,
+        Math.max(1, s - 1 - Math.floor(rand() * 2))
+      );
+    }
+    tex.refresh();
+  }
+
+  // Screen-edge vignette.
+  {
+    const w = 480;
+    const h = 270;
+    const tex = scene.textures.createCanvas('vignette', w, h);
+    const ctx = tex.getContext();
+    const grad = ctx.createRadialGradient(w / 2, h / 2, 100, w / 2, h / 2, 300);
+    grad.addColorStop(0, 'rgba(1,3,8,0)');
+    grad.addColorStop(0.55, 'rgba(1,3,8,0.22)');
+    grad.addColorStop(1, 'rgba(1,3,8,0.66)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, w, h);
+    tex.refresh();
+  }
+
   // Headlight cone: a wedge of light fading with distance.
   {
     const w = 170;
@@ -378,6 +432,106 @@ Sea.buildWorld = function (scene) {
   }
 };
 
+/*
+ * Atmosphere pass: plankton drift, propeller bubbles, foreground debris,
+ * vignette, and the opening control hint. Called after the sub exists.
+ */
+Sea.buildAtmosphere = function (scene) {
+  const cam = scene.cameras.main;
+  const view = { w: cam.width, h: cam.height };
+
+  // Plankton: faint additive motes drifting through the water column.
+  // The emitter rides the camera; particles live in world space.
+  scene.plankton = scene.add.particles(0, 0, 'mote', {
+    emitZone: {
+      type: 'random',
+      source: new Phaser.Geom.Rectangle(-view.w / 2 - 30, -view.h / 2 - 20, view.w + 60, view.h + 40),
+    },
+    speedX: { min: -6, max: 6 },
+    speedY: { min: -5, max: 2 },
+    lifespan: { min: 6000, max: 11000 },
+    alpha: { start: 0.35, end: 0 },
+    scale: { min: 0.5, max: 1 },
+    tint: [0xbfe4ff, 0x8fd8d0, 0xffffff],
+    quantity: 1,
+    frequency: 90,
+    blendMode: Phaser.BlendModes.ADD,
+  });
+  scene.plankton.setDepth(Sea.DEPTH.glow);
+
+  // Bubbles from the propeller while thrusting (plus a lazy idle burp).
+  scene.bubbles = scene.add.particles(0, 0, 'bubble', {
+    speedY: { min: -26, max: -14 },
+    speedX: { min: -8, max: 8 },
+    lifespan: { min: 1400, max: 2600 },
+    alpha: { start: 0.7, end: 0 },
+    scale: { min: 0.5, max: 1 },
+    frequency: 110,
+    emitting: false,
+  });
+  scene.bubbles.setDepth(Sea.DEPTH.sub - 0.5);
+  scene.time.addEvent({
+    delay: 3200,
+    loop: true,
+    callback: () => {
+      if (!scene.bubbles.emitting) scene.bubbles.explode(1);
+    },
+  });
+
+  // Foreground debris layer, drifting faster than the world.
+  const fore = scene.add
+    .tileSprite(0, 0, view.w, view.h, 'fgDebris')
+    .setOrigin(0, 0)
+    .setDepth(Sea.DEPTH.fore)
+    .setScrollFactor(0)
+    .setAlpha(0.8);
+  scene.parallax.push({
+    obj: fore,
+    update() {
+      fore.tilePositionX = cam.scrollX * 1.4;
+      fore.tilePositionY = cam.scrollY * 1.4;
+    },
+  });
+
+  // Vignette hugging the screen edges.
+  scene.add
+    .image(0, 0, 'vignette')
+    .setOrigin(0, 0)
+    .setDepth(Sea.DEPTH.vignette)
+    .setScrollFactor(0)
+    .setDisplaySize(view.w, view.h);
+
+  // Opening hint, fading away once you start drifting.
+  const hint = scene.add
+    .text(view.w / 2, view.h - 26, 'W A S D  —  drift', {
+      fontFamily: 'monospace',
+      fontSize: '10px',
+      color: '#9fd8ff',
+    })
+    .setOrigin(0.5)
+    .setDepth(Sea.DEPTH.vignette + 1)
+    .setScrollFactor(0)
+    .setAlpha(0.75);
+  scene.tweens.add({
+    targets: hint,
+    alpha: 0,
+    delay: 6000,
+    duration: 2400,
+    onComplete: () => hint.destroy(),
+  });
+};
+
 Sea.updateWorld = function (scene) {
   for (const p of scene.parallax) p.update();
+
+  const cam = scene.cameras.main;
+  if (scene.plankton) {
+    scene.plankton.setPosition(cam.midPoint.x, cam.midPoint.y);
+  }
+  if (scene.bubbles && scene.subBody) {
+    scene.bubbles.setPosition(
+      scene.subBody.x - scene.facing * 15,
+      scene.subBody.y + 1
+    );
+  }
 };

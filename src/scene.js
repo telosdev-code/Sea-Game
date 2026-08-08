@@ -29,6 +29,7 @@ Sea.SceneMain = class extends Phaser.Scene {
     Sea.buildWorld(this);
     Sea.spawnCreatures(this);
     this.buildSub(200, W.height * 0.55);
+    Sea.buildAtmosphere(this);
 
     this.keys = this.input.keyboard.addKeys('W,A,S,D,UP,LEFT,DOWN,RIGHT');
 
@@ -131,6 +132,7 @@ Sea.SceneMain = class extends Phaser.Scene {
     // Propeller spins lazily at idle, faster under thrust.
     const thrusting = ax !== 0 || ay !== 0;
     this.subSprite.anims.timeScale = thrusting ? 1 : 0.3;
+    if (this.bubbles) this.bubbles.emitting = thrusting;
 
     Sea.updateWorld(this);
     Sea.updateCreatures(this, time, delta);
