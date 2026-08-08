@@ -20,12 +20,14 @@ Sea.SceneMain = class extends Phaser.Scene {
 
     Sea.makeSubTextures(this);
     Sea.makeWorldTextures(this);
+    Sea.makeCreatureTextures(this);
 
     // Keep the sub inside the water column: below the surface, above the floor.
     this.physics.world.setBounds(24, 30, W.width - 48, W.height - 30 - 70);
     this.cameras.main.setBounds(0, 0, W.width, W.height);
 
     Sea.buildWorld(this);
+    Sea.spawnCreatures(this);
     this.buildSub(200, W.height * 0.55);
 
     this.keys = this.input.keyboard.addKeys('W,A,S,D,UP,LEFT,DOWN,RIGHT');
@@ -99,7 +101,7 @@ Sea.SceneMain = class extends Phaser.Scene {
     this.facing = 1;
   }
 
-  update() {
+  update(time, delta) {
     const body = this.subBody.body;
     const k = this.keys;
     const ACCEL = 240;
@@ -131,5 +133,6 @@ Sea.SceneMain = class extends Phaser.Scene {
     this.subSprite.anims.timeScale = thrusting ? 1 : 0.3;
 
     Sea.updateWorld(this);
+    Sea.updateCreatures(this, time, delta);
   }
 };
