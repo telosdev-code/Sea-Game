@@ -19,12 +19,13 @@ Sea.SceneMain = class extends Phaser.Scene {
     const W = Sea.WORLD;
 
     Sea.makeSubTextures(this);
+    Sea.makeWorldTextures(this);
 
     // Keep the sub inside the water column: below the surface, above the floor.
     this.physics.world.setBounds(24, 30, W.width - 48, W.height - 30 - 70);
     this.cameras.main.setBounds(0, 0, W.width, W.height);
 
-    this.buildPlaceholderWorld();
+    Sea.buildWorld(this);
     this.buildSub(200, W.height * 0.55);
 
     this.keys = this.input.keyboard.addKeys('W,A,S,D,UP,LEFT,DOWN,RIGHT');
@@ -34,26 +35,36 @@ Sea.SceneMain = class extends Phaser.Scene {
     cam.setDeadzone(36, 24);
   }
 
-  /*
-   * Phase-1 scaffolding so camera scroll is visible before the real art
-   * lands: a faint dot grid and a floor line.
-   */
-  buildPlaceholderWorld() {
-    const g = this.add.graphics().setDepth(1);
-    g.fillStyle(0x12203a, 1);
-    for (let x = 0; x < Sea.WORLD.width; x += 120) {
-      for (let y = 60; y < Sea.WORLD.height - 60; y += 90) {
-        g.fillRect(x, y, 2, 2);
-      }
-    }
-    g.fillStyle(0x1a2c4a, 1);
-    g.fillRect(0, Sea.WORLD.height - 64, Sea.WORLD.width, 3);
-  }
-
   buildSub(x, y) {
     // A physics-enabled container: the sprite rides inside so the idle bob
-    // (and later the headlight cone) can move without fighting the body.
-    this.subBody = this.add.container(x, y).setDepth(7);
+    // and the headlight cone move with the hull without fighting the body.
+    this.subBody = this.add.container(x, y).setDepth(Sea.DEPTH.sub);
+
+    // Headlight cone, projected from the bow. Lives in the container so it
+    // rotates with the hull; flipped in update() when the sub turns.
+    this.subCone = this.add
+      .image(11, 1, 'cone')
+      .setOrigin(0, 0.5)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    this.subBody.add(this.subCone);
+    this.tweens.add({
+      targets: this.subCone,
+      alpha: { from: 0.85, to: 1 },
+      duration: 260,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
+    });
+
+    // Soft ambient halo around the hull.
+    this.subHalo = this.add
+      .image(0, 0, 'orb')
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setTint(0x9fd8ff)
+      .setScale(2.4)
+      .setAlpha(0.16);
+    this.subBody.add(this.subHalo);
+
     this.subSprite = this.add.sprite(0, 0, 'sub', 0);
     this.subBody.add(this.subSprite);
 
@@ -104,6 +115,8 @@ Sea.SceneMain = class extends Phaser.Scene {
     if (ax > 0) this.facing = 1;
     else if (ax < 0) this.facing = -1;
     this.subSprite.setFlipX(this.facing < 0);
+    this.subCone.setScale(this.facing, 1);
+    this.subCone.x = 11 * this.facing;
 
     // Tilt the nose toward vertical travel; mirrored when facing left.
     const tilt = Phaser.Math.Clamp(body.velocity.y * 0.0032, -0.34, 0.34);
@@ -116,5 +129,7 @@ Sea.SceneMain = class extends Phaser.Scene {
     // Propeller spins lazily at idle, faster under thrust.
     const thrusting = ax !== 0 || ay !== 0;
     this.subSprite.anims.timeScale = thrusting ? 1 : 0.3;
+
+    Sea.updateWorld(this);
   }
 };
