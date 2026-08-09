@@ -8,14 +8,35 @@
 
 window.Sea = window.Sea || {};
 
-/* Photo prices: rarer wildlife pays better. */
+/*
+ * Depth bands, one per hull rating. Each band has its own wildlife and
+ * pays better than the one above it, so buying depth is what unlocks new
+ * subjects for the camera.
+ */
+Sea.BANDS = [
+  { name: 'Sunlit Shallows', min: 8, max: 150 },
+  { name: 'The Twilight', min: 150, max: 300 },
+  { name: 'The Midnight', min: 300, max: 600 },
+  { name: 'The Abyss', min: 600, max: 1000 },
+];
+
+/* Photo prices: deeper and rarer wildlife pays better. */
 Sea.SPECIES = {
-  school0: { name: 'reef school', value: 15 },
-  school1: { name: 'garibaldi school', value: 25 },
-  school2: { name: 'moonfish school', value: 40 },
-  jelly: { name: 'jellyfish', value: 30 },
-  turtle: { name: 'sea turtle', value: 80 },
-  meg: { name: 'GOLDEN MEGALODON', value: 1200 },
+  // 0–150 m
+  school0: { name: 'reef school', value: 15, band: 0 },
+  school1: { name: 'garibaldi school', value: 25, band: 0 },
+  turtle: { name: 'sea turtle', value: 80, band: 0 },
+  // 150–300 m
+  school2: { name: 'moonfish school', value: 50, band: 1 },
+  jelly: { name: 'moon jellyfish', value: 70, band: 1, glows: true },
+  sunfish: { name: 'ocean sunfish', value: 150, band: 1 },
+  // 300–600 m
+  school3: { name: 'lanternfish shoal', value: 180, band: 2, glows: true },
+  crownjelly: { name: 'crown jellyfish', value: 240, band: 2, glows: true },
+  // 600–1000 m
+  angler: { name: 'abyssal anglerfish', value: 420, band: 3, glows: true },
+  squid: { name: 'giant squid', value: 650, band: 3 },
+  meg: { name: 'GOLDEN MEGALODON', value: 1200, band: 3, glows: true },
 };
 
 /* ------------------------------------------------------------------ */
@@ -149,6 +170,156 @@ Sea.makeCreatureTextures = function (scene) {
     repeat: -1,
   });
 
+  // Lanternfish: a deep shoal whose flanks are studded with pale
+  // photophores. Same body as the shallow schools, colder palette.
+  Sea.pixelTexture(scene, 'fish3', fishFrames, {
+    O: '#050a12',
+    B: '#26405e',
+    L: '#9fe8ff',
+    T: '#16283e',
+    E: '#eaffff',
+  });
+  scene.anims.create({
+    key: 'fish3-swim',
+    frames: [{ key: 'fish3', frame: 0 }, { key: 'fish3', frame: 1 }],
+    frameRate: 5,
+    repeat: -1,
+  });
+
+  // Ocean sunfish: an unmistakable disc in profile — towering dorsal,
+  // mirrored anal fin, and the stubby clavus where a tail should be.
+  // Drawn from geometry so the disc stays clean at this size.
+  Sea.genSunfish(scene, 'sunfish');
+
+  // Anglerfish: mostly mouth. The illicium curls over its head and ends
+  // in a lure that is a genuine light source in the dark.
+  const anglerPal = {
+    O: '#050810',
+    B: '#3a2a44', // body
+    b: '#241a2c', // body shade
+    F: '#4e3a5c', // fins
+    E: '#ffd86a', // eye
+    W: '#f4f0ff', // teeth
+    R: '#2a1f34', // rod
+    G: '#bff8ff', // lure
+  };
+  const anglerFrames = [
+    [
+      '..........RRRR......',
+      '........RR....RR....',
+      '.......R........GG..',
+      '......R.........GG..',
+      '......R.............',
+      '..OOOOROOOO.........',
+      '.OFBBBBBBBBOO.......',
+      'OFFBBBBBBBBBBOO.....',
+      'OFBBBBBEBBBBBBBOO...',
+      'OFBBBBBBBBBWBWBWBO..',
+      'OFbbbbbbbWBWBWBWBWO.',
+      'OFFbbbbbbbBWBWBWBO..',
+      '.OFFbbbbbbbbOOOOO...',
+      '..OOFFbbbbbOO.......',
+      '....OOOOOOOO........',
+    ],
+    [
+      '.........RRRR.......',
+      '.......RR....RR.....',
+      '......R........GG...',
+      '.....R.........GG...',
+      '.....R..............',
+      '..OOOROOOO..........',
+      '.OFBBBBBBBBOO.......',
+      'OFFBBBBBBBBBBOO.....',
+      'OFBBBBBEBBBBBBBOO...',
+      'OFBBBBBBBBBWBWBWBO..',
+      'OFbbbbbbbWBWBWBWBWO.',
+      'OFFbbbbbbbBWBWBWBO..',
+      '.OFFbbbbbbbbOOOOO...',
+      '..OOFFbbbbbOO.......',
+      '....OOOOOOOO........',
+    ],
+  ];
+  Sea.pixelTexture(scene, 'angler', anglerFrames, anglerPal);
+  scene.anims.create({
+    key: 'angler-swim',
+    frames: [{ key: 'angler', frame: 0 }, { key: 'angler', frame: 1 }],
+    frameRate: 1.8,
+    repeat: -1,
+  });
+
+  // Giant squid: streamlined mantle, huge eye, arm crown and two long
+  // hunting tentacles trailing behind.
+  const squidPal = {
+    O: '#12060e',
+    M: '#a83a52', // mantle
+    m: '#7a2438', // mantle shade
+    L: '#d4657a', // highlight
+    A: '#8e2c42', // arms
+    E: '#ffeccd', // eye
+    P: '#2a0e18', // pupil
+  };
+  const squidFrames = [
+    [
+      '..........OOOO..........',
+      '.........OMMMMO.........',
+      '........OMMMMMMO........',
+      '........OMLMMMMO........',
+      '........OMLMMMMO........',
+      '........OMLMMMMO........',
+      '........OMMMMMmO........',
+      '.......OMMMMMMmmO.......',
+      '.......OMMMMMMmmO.......',
+      '......OOMMMMMMMmOO......',
+      '.....OMMEPMMMMEPMMO.....',
+      '.....OMMEEMMMMEEMMO.....',
+      '.....OOMMMMMMMMMMOO.....',
+      '......OAAOAAOAAOAO......',
+      '.....OAAOAAOAAOAAOO.....',
+      '....OAAO.OAO.OAO.OAAO...',
+      '...OAAO..OAO..OAO..OAO..',
+      '..OAAO...OAO..OAO...OAO.',
+      '..OAO....OAO..OAO....OAO',
+      '.OAO.....OAO..OAO.....OO',
+      '.OO......OAO..OAO.......',
+      '.........OAO..OAO.......',
+      '..........OO..OAO.......',
+      '..............OO........',
+    ],
+    [
+      '..........OOOO..........',
+      '.........OMMMMO.........',
+      '........OMMMMMMO........',
+      '........OMLMMMMO........',
+      '........OMLMMMMO........',
+      '........OMLMMMMO........',
+      '........OMMMMMmO........',
+      '.......OMMMMMMmmO.......',
+      '.......OMMMMMMmmO.......',
+      '......OOMMMMMMMmOO......',
+      '.....OMMEPMMMMEPMMO.....',
+      '.....OMMEEMMMMEEMMO.....',
+      '.....OOMMMMMMMMMMOO.....',
+      '......OAAOAAOAAOAO......',
+      '......OAAOAAOAAOAOO.....',
+      '.....OAAO.OAO.OAO.OAO...',
+      '....OAAO..OAO..OAO..OAO.',
+      '...OAAO...OAO..OAO...OAO',
+      '..OAO.....OAO..OAO....OO',
+      '..OO......OAO..OAO......',
+      '..........OAO..OAO......',
+      '.........OAO....OAO.....',
+      '.........OO.....OAO.....',
+      '................OO......',
+    ],
+  ];
+  Sea.pixelTexture(scene, 'squid', squidFrames, squidPal);
+  scene.anims.create({
+    key: 'squid-swim',
+    frames: [{ key: 'squid', frame: 0 }, { key: 'squid', frame: 1 }],
+    frameRate: 1.2,
+    repeat: -1,
+  });
+
   // The golden megalodon: a huge gilded shark that haunts the bedrock
   // trenches. Drawn procedurally (see genMegalodon) so it can be big
   // without hand-maintaining a sprite grid this size.
@@ -159,6 +330,113 @@ Sea.makeCreatureTextures = function (scene) {
     frameRate: 1.4,
     repeat: -1,
   });
+};
+
+/*
+ * Ocean sunfish. A near-circular disc with a tall dorsal and a mirrored
+ * anal fin; the two frames rock the fins through a slow sculling beat.
+ */
+Sea.genSunfish = function (scene, key) {
+  const W = 36;
+  const H = 44;
+  const CX = 20;
+  const CY = 22;
+  const RX = 11;
+  const RY = 12;
+
+  const PAL = {
+    out: '#0b1420',
+    back: '#3f5772',
+    body: '#6d879f',
+    lit: '#9db4c6',
+    belly: '#d3e0e8',
+    fin: '#516b86',
+    finLit: '#7e97ad',
+    eye: '#f2f8ff',
+  };
+
+  const tex = scene.textures.createCanvas(key, W * 2, H);
+  const ctx = tex.getContext();
+
+  for (let f = 0; f < 2; f++) {
+    const beat = f === 0 ? -1 : 1;
+    const mask = new Uint8Array(W * H);
+    const set = (x, y, v) => {
+      if (x >= 0 && x < W && y >= 0 && y < H && !mask[y * W + x]) {
+        mask[y * W + x] = v;
+      }
+    };
+
+    // disc body, squared off at the rear into the clavus
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const dx = (x - CX) / RX;
+        const dy = (y - CY) / RY;
+        if (dx * dx + dy * dy <= 1) set(x, y, 1);
+      }
+    }
+    for (let x = CX - RX - 4; x < CX - RX + 2; x++) {
+      const t = (x - (CX - RX - 4)) / 6;
+      const half = Math.round(3 + t * 5);
+      for (let y = CY - half; y <= CY + half; y++) set(x, y, 1);
+    }
+
+    const tri = (ax, ay, bx, by, cx, cy) => {
+      const sign = (px, py, qx, qy, rx, ry) =>
+        (px - rx) * (qy - ry) - (qx - rx) * (py - ry);
+      for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+          const d1 = sign(x, y, ax, ay, bx, by);
+          const d2 = sign(x, y, bx, by, cx, cy);
+          const d3 = sign(x, y, cx, cy, ax, ay);
+          if (!((d1 < 0 || d2 < 0 || d3 < 0) && (d1 > 0 || d2 > 0 || d3 > 0))) {
+            set(x, y, 2);
+          }
+        }
+      }
+    };
+    tri(13, CY - 9, 25, CY - 9, 19 + beat * 3, 0); // dorsal
+    tri(13, CY + 9, 25, CY + 9, 19 - beat * 3, H - 1); // anal
+
+    const empty = (x, y) =>
+      x < 0 || x >= W || y < 0 || y >= H || mask[y * W + x] === 0;
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const m = mask[y * W + x];
+        if (!m) continue;
+        let color;
+        if (empty(x - 1, y) || empty(x + 1, y) || empty(x, y - 1) || empty(x, y + 1)) {
+          color = PAL.out;
+        } else if (m === 2) {
+          color = empty(x - 1, y - 1) || empty(x + 1, y + 1) ? PAL.fin : PAL.finLit;
+        } else {
+          const rel = (y - (CY - RY)) / (2 * RY);
+          if (rel < 0.2) color = PAL.back;
+          else if (rel < 0.44) color = PAL.body;
+          else if (rel < 0.62) color = PAL.lit;
+          else if (rel < 0.82) color = PAL.body;
+          else color = PAL.belly;
+          // mottled hide
+          if ((x * 7 + y * 13) % 23 === 0) color = PAL.back;
+        }
+        ctx.fillStyle = color;
+        ctx.fillRect(f * W + x, y, 1, 1);
+      }
+    }
+
+    const dot = (x, y, w, h, c) => {
+      ctx.fillStyle = c;
+      ctx.fillRect(f * W + x, y, w, h);
+    };
+    dot(26, CY - 5, 3, 3, PAL.out);
+    dot(27, CY - 4, 1, 1, PAL.eye);
+    dot(29, CY + 1, 2, 2, PAL.out); // small puckered mouth
+  }
+
+  tex.refresh();
+  tex.add(0, 0, 0, 0, W, H);
+  tex.add(1, 0, W, 0, W, H);
+  return tex;
 };
 
 /*
@@ -331,103 +609,217 @@ Sea.genMegalodon = function (scene, key) {
 /* ------------------------------------------------------------------ */
 
 Sea.spawnCreatures = function (scene) {
-  const W = Sea.WORLD;
   const rand = Sea.rng(0xf15e5);
   scene.creatures = [];
+  let uid = 0;
 
-  // Fish schools: a shared anchor wanders; each fish holds a loose slot
-  // around it with its own swim wobble. Schools favour the upper waters
-  // and the open galleries between formations.
-  for (let s = 0; s < 14; s++) {
-    const spot = Sea.openSpot(rand, 30, 620, 70);
-    if (!spot) continue;
-    const school = {
-      type: 'school',
-      x: spot.x,
-      y: spot.y,
-      heading: rand() * Math.PI * 2,
-      speed: 16 + rand() * 14,
-      wanderPhase: rand() * 100,
-      fish: [],
-    };
-    // weighted rarity: moonfish schools are the scarce ones
-    const roll = rand();
-    const variant = roll < 0.45 ? 0 : roll < 0.8 ? 1 : 2;
-    school.id = 'school' + s;
-    school.species = 'school' + variant;
-    const count = 5 + Math.floor(rand() * 5);
-    for (let i = 0; i < count; i++) {
+  const band = (i) => Sea.BANDS[i];
+
+  /* --- fish schools, one variant per band ------------------------- */
+  const schoolPlan = [
+    { variant: 0, bandIdx: 0, count: 5 },
+    { variant: 1, bandIdx: 0, count: 4 },
+    { variant: 2, bandIdx: 1, count: 6 },
+    { variant: 3, bandIdx: 2, count: 6 },
+  ];
+  for (const plan of schoolPlan) {
+    const b = band(plan.bandIdx);
+    for (let s = 0; s < plan.count; s++) {
+      const spot = Sea.openSpot(rand, b.min + 10, b.max - 10, 70);
+      if (!spot) continue;
+      const school = {
+        type: 'school',
+        id: 'sch' + uid++,
+        species: 'school' + plan.variant,
+        x: spot.x,
+        y: spot.y,
+        heading: rand() * Math.PI * 2,
+        speed: 16 + rand() * 14,
+        wanderPhase: rand() * 100,
+        fish: [],
+      };
+      const count = 5 + Math.floor(rand() * 5);
+      for (let i = 0; i < count; i++) {
+        const spr = scene.add
+          .sprite(school.x, school.y, 'fish' + plan.variant, 0)
+          .setDepth(Sea.DEPTH.creature)
+          .setAlpha(0.96);
+        spr.play({ key: 'fish' + plan.variant + '-swim', startFrame: i % 2 });
+        school.fish.push({
+          spr,
+          ox: (rand() - 0.5) * 52,
+          oy: (rand() - 0.5) * 30,
+          phase: rand() * Math.PI * 2,
+          wob: 1.6 + rand() * 2.2,
+        });
+        // lanternfish carry their own photophore glow
+        if (plan.variant === 3) {
+          const g = scene.add
+            .image(school.x, school.y, 'orb')
+            .setBlendMode(Phaser.BlendModes.ADD)
+            .setTint(0x9fe8ff)
+            .setScale(0.3)
+            .setAlpha(0.5)
+            .setDepth(Sea.DEPTH.glow);
+          school.fish[i].glow = g;
+          Sea.addLight(scene, g, 16);
+        }
+      }
+      scene.creatures.push(school);
+    }
+  }
+
+  /* --- jellyfish: moon jellies shallow, crown jellies deeper ------ */
+  const jellyPlan = [
+    { species: 'jelly', bandIdx: 1, count: 10, tint: 0xffffff, glow: 0xc084f0, scale: 1, radius: 26 },
+    { species: 'crownjelly', bandIdx: 2, count: 9, tint: 0x9fd8ff, glow: 0x58e0ff, scale: 1.6, radius: 44 },
+  ];
+  for (const plan of jellyPlan) {
+    const b = band(plan.bandIdx);
+    for (let j = 0; j < plan.count; j++) {
+      const spot = Sea.openSpot(rand, b.min + 10, b.max - 10, 55);
+      if (!spot) continue;
       const spr = scene.add
-        .sprite(school.x, school.y, 'fish' + variant, 0)
+        .sprite(spot.x, spot.y, 'jelly', 0)
         .setDepth(Sea.DEPTH.creature)
-        .setAlpha(0.96);
-      spr.play({ key: 'fish' + variant + '-swim', startFrame: i % 2 });
-      school.fish.push({
+        .setAlpha(0.92)
+        .setScale(plan.scale)
+        .setTint(plan.tint);
+      const glow = scene.add
+        .image(spot.x, spot.y, 'orb')
+        .setBlendMode(Phaser.BlendModes.ADD)
+        .setTint(plan.glow)
+        .setScale(0.9 * plan.scale)
+        .setAlpha(0.34)
+        .setDepth(Sea.DEPTH.glow);
+      Sea.addLight(scene, glow, plan.radius, true);
+      scene.creatures.push({
+        type: 'jelly',
+        id: 'jel' + uid++,
+        species: plan.species,
         spr,
-        ox: (rand() - 0.5) * 52,
-        oy: (rand() - 0.5) * 30,
-        phase: rand() * Math.PI * 2,
-        wob: 1.6 + rand() * 2.2,
+        glow,
+        baseX: spot.x,
+        t: rand() * 10,
+        pulseEvery: 1.9 + rand() * 1.5,
+        driftPhase: rand() * Math.PI * 2,
+        vy: 0,
       });
     }
-    scene.creatures.push(school);
   }
 
-  // Jellyfish: pulse upward, sink between pulses, drift sideways. They
-  // haunt every depth, glowing brighter company the deeper you go.
-  const jellyTints = [0xffffff, 0xd0b8ff, 0xb8e4ff];
-  for (let j = 0; j < 22; j++) {
-    const spot = Sea.openSpot(rand, 60, 940, 55);
-    if (!spot) continue;
-    const x = spot.x;
-    const y = spot.y;
-    const tint = jellyTints[Math.floor(rand() * 3)];
-    const spr = scene.add
-      .sprite(x, y, 'jelly', 0)
-      .setDepth(Sea.DEPTH.creature)
-      .setAlpha(0.92)
-      .setTint(tint);
-    const glow = scene.add
-      .image(x, y, 'orb')
-      .setBlendMode(Phaser.BlendModes.ADD)
-      .setTint(0xc084f0)
-      .setScale(0.9)
-      .setAlpha(0.34);
-    scene.creatures.push({
-      type: 'jelly',
-      id: 'jelly' + j,
-      species: 'jelly',
-      spr,
-      glow,
-      baseX: x,
-      t: rand() * 10,
-      pulseEvery: 1.9 + rand() * 1.5,
-      driftPhase: rand() * Math.PI * 2,
-      vy: 0,
-    });
-  }
-
-  // Sea turtles: slow travellers of the sunlit-adjacent waters.
+  /* --- sea turtles, shallow ---------------------------------------- */
   for (let t = 0; t < 4; t++) {
-    const spot = Sea.openSpot(rand, 40, 480, 80);
+    const b = band(0);
+    const spot = Sea.openSpot(rand, b.min + 20, b.max - 10, 80);
     if (!spot) continue;
-    const dir = t % 2 === 0 ? 1 : -1;
     const spr = scene.add
       .sprite(spot.x, spot.y, 'turtle', 0)
       .setDepth(Sea.DEPTH.creature)
       .play('turtle-swim');
     scene.creatures.push({
-      type: 'turtle',
-      id: 'turtle' + t,
+      type: 'cruiser',
+      id: 'tur' + uid++,
       species: 'turtle',
       spr,
-      vx: (10 + rand() * 5) * dir,
-      baseY: spr.y,
+      vx: (10 + rand() * 5) * (t % 2 === 0 ? 1 : -1),
+      baseY: spot.y,
       phase: rand() * Math.PI * 2,
+      bobAmp: 9,
+      bobRate: 0.45,
+      clearance: 60,
     });
   }
 
-  // The golden megalodon: one, at the bottom of the world.
+  /* --- ocean sunfish, twilight ------------------------------------- */
+  for (let i = 0; i < 4; i++) {
+    const b = band(1);
+    const spot = Sea.openSpot(rand, b.min + 20, b.max - 20, 80);
+    if (!spot) continue;
+    const spr = scene.add
+      .sprite(spot.x, spot.y, 'sunfish', 0)
+      .setDepth(Sea.DEPTH.creature)
+      .play('sunfish-swim');
+    scene.creatures.push({
+      type: 'cruiser',
+      id: 'sun' + uid++,
+      species: 'sunfish',
+      spr,
+      vx: (13 + rand() * 6) * (i % 2 === 0 ? 1 : -1),
+      baseY: spot.y,
+      phase: rand() * Math.PI * 2,
+      bobAmp: 14,
+      bobRate: 0.3,
+      clearance: 70,
+    });
+  }
+
+  /* --- anglerfish, abyss: slow drifters carrying a live lure ------- */
+  for (let i = 0; i < 6; i++) {
+    const b = band(3);
+    const spot = Sea.openSpot(rand, b.min + 20, b.max - 30, 60);
+    if (!spot) continue;
+    const spr = scene.add
+      .sprite(spot.x, spot.y, 'angler', 0)
+      .setDepth(Sea.DEPTH.creature)
+      .play('angler-swim');
+    // lure sits above and ahead of the head
+    const lure = scene.add
+      .image(spot.x + 6, spot.y - 8, 'orb')
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setTint(0xbff8ff)
+      .setScale(0.55)
+      .setAlpha(0.6)
+      .setDepth(Sea.DEPTH.glow);
+    scene.tweens.add({
+      targets: lure,
+      alpha: { from: 0.35, to: 0.85 },
+      duration: 1400 + rand() * 1400,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
+    });
+    Sea.addLight(scene, lure, 46, true);
+    scene.creatures.push({
+      type: 'cruiser',
+      id: 'ang' + uid++,
+      species: 'angler',
+      spr,
+      lure,
+      lureOffset: { x: 7, y: -9 },
+      vx: (5 + rand() * 4) * (i % 2 === 0 ? 1 : -1),
+      baseY: spot.y,
+      phase: rand() * Math.PI * 2,
+      bobAmp: 5,
+      bobRate: 0.35,
+      clearance: 46,
+    });
+  }
+
+  /* --- giant squid, abyss ------------------------------------------ */
+  for (let i = 0; i < 3; i++) {
+    const b = band(3);
+    const spot = Sea.openSpot(rand, b.min + 30, b.max - 40, 70);
+    if (!spot) continue;
+    const spr = scene.add
+      .sprite(spot.x, spot.y, 'squid', 0)
+      .setDepth(Sea.DEPTH.creature)
+      .play('squid-swim');
+    scene.creatures.push({
+      type: 'cruiser',
+      id: 'sqd' + uid++,
+      species: 'squid',
+      spr,
+      vx: (8 + rand() * 5) * (i % 2 === 0 ? 1 : -1),
+      baseY: spot.y,
+      phase: rand() * Math.PI * 2,
+      bobAmp: 11,
+      bobRate: 0.25,
+      clearance: 64,
+    });
+  }
+
+  /* --- the golden megalodon, on the bedrock ------------------------ */
   let megSpot = Sea.openSpot(rand, 880, 975, 80);
   if (!megSpot) megSpot = Sea.openSpot(rand, 860, 980, 60);
   if (!megSpot) megSpot = Sea.openSpot(rand, 840, 985, 42);
@@ -451,6 +843,7 @@ Sea.spawnCreatures = function (scene) {
       repeat: -1,
       ease: 'Sine.easeInOut',
     });
+    Sea.addLight(scene, glow, 96, true);
     scene.creatures.push({
       type: 'meg',
       id: 'meg',
@@ -504,6 +897,10 @@ Sea.updateCreatures = function (scene, time, deltaMs) {
         f.spr.x = c.x + f.ox + Math.sin(t * f.wob + f.phase) * 3;
         f.spr.y = c.y + f.oy + Math.sin(t * 1.7 + f.phase * 2) * 3;
         f.spr.setFlipX(facingLeft);
+        if (f.glow) {
+          f.glow.x = f.spr.x;
+          f.glow.y = f.spr.y;
+        }
       }
     } else if (c.type === 'jelly') {
       const prevCycle = c.t % c.pulseEvery;
@@ -525,18 +922,26 @@ Sea.updateCreatures = function (scene, time, deltaMs) {
       c.glow.x = c.spr.x;
       c.glow.y = c.spr.y + 1;
       c.glow.setAlpha(0.26 + (cycle < 0.4 ? 0.18 : 0.06 * Math.sin(c.t * 2)));
-    } else if (c.type === 'turtle') {
+    } else if (c.type === 'cruiser') {
+      // Shared behaviour for turtles, mantas, anglerfish and squid:
+      // a slow lateral patrol with a gentle bob and roll.
       c.phase += dt;
       c.spr.x += c.vx * dt;
       if (c.spr.x < 300) c.vx = Math.abs(c.vx);
       else if (c.spr.x > W.width - 300) c.vx = -Math.abs(c.vx);
       // Rock ahead: turn around.
-      if (Sea.isSolid(c.spr.x + Math.sign(c.vx) * 60, c.spr.y)) {
+      if (Sea.isSolid(c.spr.x + Math.sign(c.vx) * c.clearance, c.spr.y)) {
         c.vx = -c.vx;
       }
       c.spr.setFlipX(c.vx < 0);
-      c.spr.y = c.baseY + Math.sin(c.phase * 0.45) * 9;
-      c.spr.rotation = Math.sin(c.phase * 0.45) * 0.06 * (c.vx < 0 ? -1 : 1);
+      c.spr.y = c.baseY + Math.sin(c.phase * c.bobRate) * c.bobAmp;
+      c.spr.rotation =
+        Math.sin(c.phase * c.bobRate) * 0.06 * (c.vx < 0 ? -1 : 1);
+      if (c.lure) {
+        // the lure rides ahead of the head, on whichever side it faces
+        c.lure.x = c.spr.x + c.lureOffset.x * (c.vx < 0 ? -1 : 1);
+        c.lure.y = c.spr.y + c.lureOffset.y;
+      }
     } else if (c.type === 'meg') {
       c.phase += dt;
       c.spr.x += c.vx * dt;

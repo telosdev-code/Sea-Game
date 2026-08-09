@@ -161,6 +161,8 @@ Sea.buildSurface = function (scene) {
     repeat: -1,
     ease: 'Sine.easeInOut',
   });
+  Sea.addLight(scene, spill, 120);
+  Sea.addLight(scene, beacon, 40, true);
 
   // Underwater docking beacons: two green guide lights under the moon pool.
   const dock = { x: Sea.STATION_X, y: Sea.SURFACE_Y + 46 };
@@ -181,6 +183,7 @@ Sea.buildSurface = function (scene) {
       delay: off > 0 ? 650 : 0,
       ease: 'Sine.easeInOut',
     });
+    Sea.addLight(scene, g, 54, true);
   }
 
   // Station bob on the swell.

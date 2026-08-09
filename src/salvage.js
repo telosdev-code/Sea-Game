@@ -130,6 +130,7 @@ Sea.spawnSalvage = function (scene) {
         repeat: -1,
         repeatDelay: 2400 + rand() * 3200,
       });
+      Sea.addLight(scene, glint, type === 'ingot' || type === 'chest' ? 34 : 24, true);
       scene.salvage.push({ id: itemId, type, spr, glint, collecting: false });
     }
   }

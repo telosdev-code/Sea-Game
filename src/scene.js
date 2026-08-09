@@ -21,6 +21,7 @@ Sea.SceneMain = class extends Phaser.Scene {
     Sea.makeWorldTextures(this);
     Sea.makeCreatureTextures(this);
     Sea.makeSurfaceTextures(this);
+    Sea.makeLightTextures(this);
     Sea.generateTerrain(this);
 
     // Keep the sub inside the water column: below the surface, above bedrock.
@@ -28,6 +29,7 @@ Sea.SceneMain = class extends Phaser.Scene {
     this.physics.world.setBounds(24, top, W.width - 48, W.height - top - 24);
     this.cameras.main.setBounds(0, 0, W.width, W.height);
 
+    Sea.buildLighting(this);
     Sea.buildWorld(this);
     Sea.buildSurface(this);
     Sea.spawnCreatures(this);
@@ -71,8 +73,24 @@ Sea.SceneMain = class extends Phaser.Scene {
   }
 
   /*
-   * Snap a photo: any un-photographed wildlife close enough to the sub
-   * and inside the camera's view is captured and paid out.
+   * Is this world point inside the headlight beam or the hull's glow?
+   * The beam axis comes from the cone's own world transform so it
+   * accounts for the hull's tilt and which way the sub is facing.
+   */
+  isLit(x, y) {
+    const dx = x - this.subBody.x;
+    const dy = y - this.subBody.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < 34 * this.coneScale) return true; // hull glow
+    if (dist > 11 + 170 * this.coneScale) return false;
+    const beam = this.subCone.getWorldTransformMatrix().decomposeMatrix().rotation;
+    const delta = Math.abs(Phaser.Math.Angle.Wrap(Math.atan2(dy, dx) - beam));
+    return delta < 0.42; // ~24 degrees, a shade wider than the visible wedge
+  }
+
+  /*
+   * Snap a photo. The subject has to be in frame, in range, and actually
+   * visible — lit by the lamp, or glowing under its own power.
    */
   takePhoto() {
     if (this.photoCooldown > 0) return;
@@ -83,6 +101,7 @@ Sea.SceneMain = class extends Phaser.Scene {
     const cam = this.cameras.main;
     const view = cam.worldView;
     let shots = 0;
+    let missedDark = 0;
     for (const c of this.creatures) {
       if (Sea.save.photographed.includes(c.id)) continue;
       const cx = c.type === 'school' ? c.x : c.spr.x;
@@ -91,6 +110,10 @@ Sea.SceneMain = class extends Phaser.Scene {
       const d = Phaser.Math.Distance.Between(this.subBody.x, this.subBody.y, cx, cy);
       if (d > 270) continue;
       const info = Sea.SPECIES[c.species];
+      if (!info.glows && !this.isLit(cx, cy)) {
+        missedDark++;
+        continue;
+      }
       Sea.addMoney(this, info.value, info.name, cx, cy - 16);
       Sea.save.photographed.push(c.id);
       shots++;
@@ -98,6 +121,8 @@ Sea.SceneMain = class extends Phaser.Scene {
     if (shots > 0) {
       Sea.storeSave();
       Sea.Audio.coin();
+    } else if (missedDark > 0) {
+      this.scene.get('ui').flashNote('too dark — light your subject');
     }
   }
 
@@ -174,6 +199,11 @@ Sea.SceneMain = class extends Phaser.Scene {
 
     this.subSprite = this.add.sprite(0, 0, 'sub', 0);
     this.subBody.add(this.subSprite);
+
+    // The hull glow lights the water immediately around the boat. It is
+    // bound to the container because container children carry local
+    // coordinates, and the light pass works in world space.
+    this.subHaloLight = Sea.addLight(this, this.subBody, 34);
 
     this.physics.add.existing(this.subBody);
     const body = this.subBody.body;
@@ -272,5 +302,6 @@ Sea.SceneMain = class extends Phaser.Scene {
 
     Sea.updateWorld(this);
     Sea.updateCreatures(this, time, delta);
+    Sea.updateLighting(this);
   }
 };

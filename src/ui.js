@@ -125,6 +125,7 @@ Sea.applyUpgrades = function (sea) {
   const lights = Sea.tierDef('lights');
   sea.coneScale = lights.cone;
   sea.subHalo.setAlpha(lights.haloA).setScale(lights.haloS);
+  if (sea.subHaloLight) sea.subHaloLight.radius = lights.haloS * 15;
 };
 
 Sea.buyUpgrade = function (key) {
@@ -279,6 +280,30 @@ Sea.SceneUI = class extends Phaser.Scene {
     this.tweens.add({ targets: this.flash, alpha: 0, duration: 220 });
   }
 
+  /* Brief centre-screen note, e.g. when a shot fails in the dark. */
+  flashNote(msg) {
+    const U = Sea.UI_SCALE;
+    if (this.note) this.note.destroy();
+    this.note = this.add
+      .text(this.scale.gameSize.width / 2, this.scale.gameSize.height - 60 * U, msg, {
+        fontFamily: 'monospace',
+        fontSize: 9 * U + 'px',
+        color: '#d8a86a',
+      })
+      .setOrigin(0.5)
+      .setDepth(8);
+    this.tweens.add({
+      targets: this.note,
+      alpha: { from: 1, to: 0 },
+      delay: 900,
+      duration: 900,
+      onComplete: () => {
+        if (this.note) this.note.destroy();
+        this.note = null;
+      },
+    });
+  }
+
   buildMoney(W) {
     const U = Sea.UI_SCALE;
     this.shownMoney = Sea.save.money;
@@ -333,6 +358,13 @@ Sea.SceneUI = class extends Phaser.Scene {
     this.depthMark = this.add
       .rectangle(x - 3 * U, this.gaugeTop, 9 * U, 3 * U, 0xffd878)
       .setOrigin(0, 0.5);
+    this.bandText = this.add
+      .text(470 * U, this.gaugeTop + this.gaugeH + 22 * U, '', {
+        fontFamily: 'monospace',
+        fontSize: 6 * U + 'px',
+        color: '#5f7fa8',
+      })
+      .setOrigin(1, 0.5);
     this.depthText = this.add
       .text(470 * U, this.gaugeTop + this.gaugeH + 10 * U, '0 m', {
         fontFamily: 'monospace',
@@ -711,6 +743,8 @@ Sea.SceneUI = class extends Phaser.Scene {
     const rating = Sea.tierDef('depth').rating;
     this.ratingMark.y = this.gaugeTop + (rating / 1000) * this.gaugeH;
     this.depthText.setText(Math.round(m) + ' m');
+    const band = Sea.BANDS.find((b) => m >= b.min && m < b.max);
+    this.bandText.setText(band ? band.name : '');
     if (sea.limitHit && !Sea.state.docked) {
       const flash = Math.sin(time / 90) > 0;
       this.depthText.setColor(flash ? '#ff8a6a' : '#ffd878');

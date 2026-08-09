@@ -42,6 +42,18 @@ procedural lofi ambience (gliding seventh-chord pad, deep-water wash,
 vinyl crackle, sparse plinks) starts on your first key press and darkens
 as you dive — all synthesized in WebAudio, no audio files.
 
+## The dark
+
+The ocean is genuinely dark, and it gets darker as you sink — by ~840 m it
+is pure black. A black layer covers the world and every light source
+erases a soft hole in it, so you only see what something is actually
+lighting: your lamp, a glowing plant, a jellyfish, an anglerfish's lure, a
+glint off buried salvage, the station's lamps. Your headlight is
+equipment, not decoration, and the LIGHTS upgrades widen what you can see.
+
+Photographs need the subject visible too — light it with the lamp, or
+catch something that glows under its own power.
+
 ## The dive
 
 You start beside the floating research station. The water is open for the
@@ -59,7 +71,6 @@ free while the boat is in sea trials, click to fit:
 - **Sonar** — passive array (wildlife blips on the minimap) → broadband
   (longer range) → active ping (a visible pulse that sweeps the terrain)
 - **Minimap** — local chart → regional chart → full survey of the trench
-
 - **Salvage** — winch (recover salvage) → mag-grapple (longer reach)
 
 Equipment, money, photos and recovered salvage persist in `localStorage`;
@@ -70,20 +81,27 @@ there's a "reset save" link in the station menu.
 The running total lives in the top-right of the HUD (the minimap sits
 bottom-left). Two trades:
 
-**Wildlife photography** (`F`) — snaps anything in view within ~270px.
-Each animal pays once; rarer subjects pay more:
+**Wildlife photography** (`F`) — snaps anything in view, in range, and
+lit. Each animal pays once. Every depth band has its own wildlife, and it
+pays better the deeper you go, so each hull upgrade opens a new roster:
 
-| Subject            | Fee    |
-| ------------------ | ------ |
-| Reef school        | $15    |
-| Garibaldi school   | $25    |
-| Moonfish school    | $40    |
-| Jellyfish          | $30    |
-| Sea turtle         | $80    |
-| ???                | $1,200 |
+| Band                     | Subject             | Fee    |
+| ------------------------ | ------------------- | ------ |
+| Sunlit Shallows 0–150 m  | Reef school         | $15    |
+|                          | Garibaldi school    | $25    |
+|                          | Sea turtle          | $80    |
+| The Twilight 150–300 m   | Moonfish school     | $50    |
+|                          | Moon jellyfish      | $70    |
+|                          | Ocean sunfish       | $150   |
+| The Midnight 300–600 m   | Lanternfish shoal   | $180   |
+|                          | Crown jellyfish     | $240   |
+| The Abyss 600–1000 m     | Abyssal anglerfish  | $420   |
+|                          | Giant squid         | $650   |
+|                          | ???                 | $1,200 |
 
-Something huge and golden patrols the bedrock trenches below 900 m. You'll
-need the full hull rating to reach it.
+Jellyfish, lanternfish and anglerfish carry their own light — everything
+else you have to illuminate. Something huge and golden patrols the bedrock
+trenches below 900 m; you'll need the full hull rating to reach it.
 
 **Salvage** — lost cargo winks in the dark on ledges all the way down:
 cargo crates ($25) in the shallows, amphorae ($60) mid-water, sea chests
@@ -100,7 +118,8 @@ src/pixels.js         world constants + pixel-art helpers + the submarine
 src/terrain.js        noise-carved rock, caves & trenches, collision, chart
 src/world.js          water gradient, parallax layers, flora, atmosphere
 src/station.js        night sky, waterline, the floating surface station
-src/creatures.js      fish schools, jellyfish, sea turtles, the megalodon
+src/lighting.js       darkness layer + the light sources that carve it
+src/creatures.js      wildlife for all four depth bands, incl. the megalodon
 src/salvage.js        recoverable cargo scattered over the terrain
 src/audio.js          procedural lofi ambience + SFX (pure WebAudio)
 src/ui.js             equipment/save, money, depth gauge, minimap, menus
@@ -109,8 +128,8 @@ src/scene.js          the ocean scene tying it all together
 
 ## What's down there
 
-- Schools of fish (three colorways) drifting and turning together
+- Schools of fish (four colorways) drifting and turning together
 - Jellyfish that pulse upward, then sink and drift
-- Two sea turtles slowly crossing the trench
-- Bioluminescent plants, swaying kelp, plankton drifting in the beam
+- Sea turtles, sunfish, squid and anglerfish cruising their own depths
+- Bioluminescent plants, swaying kelp, plankton caught in the beam
 

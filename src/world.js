@@ -413,6 +413,7 @@ Sea.decorateTerrain = function (scene, rand) {
       repeat: -1,
       ease: 'Sine.easeInOut',
     });
+    Sea.addLight(scene, glow, 30, true);
   };
 
   for (const s of surfaces) {
@@ -476,7 +477,9 @@ Sea.buildAtmosphere = function (scene) {
     frequency: 90,
     blendMode: Phaser.BlendModes.ADD,
   });
-  scene.plankton.setDepth(Sea.DEPTH.glow);
+  // Below the darkness layer, so motes only show where light reaches
+  // them — the headlight beam picks them out of the black.
+  scene.plankton.setDepth(Sea.DEPTH.darkness - 0.2);
 
   // Bubbles from the propeller while thrusting (plus a lazy idle burp).
   scene.bubbles = scene.add.particles(0, 0, 'bubble', {
@@ -514,14 +517,6 @@ Sea.buildAtmosphere = function (scene) {
     },
   });
 
-  // Depth darkness: dims the world as you sink, while glows, the sub and
-  // its headlight (all layered above it) cut through.
-  scene.darkness = scene.add
-    .rectangle(0, 0, view.w, view.h, 0x010308)
-    .setOrigin(0, 0)
-    .setDepth(Sea.DEPTH.darkness)
-    .setAlpha(0);
-
   // Vignette hugging the screen edges.
   const vignette = scene.add
     .image(0, 0, 'vignette')
@@ -535,8 +530,6 @@ Sea.buildAtmosphere = function (scene) {
       const wv = cam.worldView;
       vignette.x = wv.x;
       vignette.y = wv.y;
-      scene.darkness.x = wv.x;
-      scene.darkness.y = wv.y;
     },
   });
 };
@@ -555,8 +548,4 @@ Sea.updateWorld = function (scene) {
     );
   }
   if (scene.waves) scene.waves.tilePositionX += 0.12;
-  if (scene.darkness && scene.subBody) {
-    const m = Sea.depthAt(scene.subBody.y);
-    scene.darkness.setAlpha(Phaser.Math.Clamp((m - 120) / 880, 0, 1) * 0.32);
-  }
 };
