@@ -318,6 +318,34 @@ Sea.Audio = (function () {
     });
   };
 
+  /* Hull strike: a low thump with a scrape of noise over it. */
+  A.thud = function (strength) {
+    if (!ctx || muted) return;
+    const t = ctx.currentTime;
+    const s = Phaser.Math.Clamp(strength, 0, 1);
+
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(150 + s * 60, t);
+    osc.frequency.exponentialRampToValueAtTime(48, t + 0.18 + s * 0.16);
+    osc.connect(sfxGain(0.07 + s * 0.16, t, 0.25 + s * 0.25));
+    osc.start(t);
+    osc.stop(t + 0.6);
+
+    const src = ctx.createBufferSource();
+    src.buffer = noiseBuffer(0.14, (d) => {
+      for (let i = 0; i < d.length; i++) {
+        d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
+      }
+    });
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 500 + s * 1400;
+    src.connect(lp);
+    lp.connect(sfxGain(0.05 + s * 0.13, t, 0.12 + s * 0.12));
+    src.start(t);
+  };
+
   A.install = function () {
     if (!ctx || muted) return;
     const t = ctx.currentTime;

@@ -16,8 +16,14 @@ new Phaser.Game({
   width: 480 * Sea.UI_SCALE,
   height: 270 * Sea.UI_SCALE,
   backgroundColor: '#04060f',
-  pixelArt: true,
-  roundPixels: true,
+  // Spelled out rather than using `pixelArt: true`, which would force
+  // roundPixels on. Nearest-neighbour sampling keeps the art crisp, but
+  // snapping every draw to a whole pixel makes slow drift visibly step —
+  // and this game is played at a drift.
+  pixelArt: false,
+  antialias: false,
+  antialiasGL: false,
+  roundPixels: false,
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,

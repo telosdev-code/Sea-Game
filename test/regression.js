@@ -403,6 +403,208 @@ async function main() {
     `${perFrame.writes} writes over ${perFrame.frames} frames`
   );
 
+  /* -- hull: capacity scales with the hull upgrade -------------------- */
+  const hullTiers = await page.evaluate(() => {
+    const tiers = Sea.UPGRADES.depth.tiers.map((t) => t.hp);
+    const before = { depth: Sea.save.depth, hull: Sea.save.hull };
+    Sea.save.depth = 0;
+    Sea.save.hull = 10;
+    Sea.buyUpgrade('depth'); // upgrading refits the hull
+    const afterBuy = { depth: Sea.save.depth, hull: Sea.save.hull, max: Sea.hullMax() };
+    Sea.save.depth = before.depth;
+    Sea.save.hull = Sea.hullMax();
+    return { tiers, afterBuy };
+  });
+  check(
+    'hull: capacity rises with each hull tier',
+    hullTiers.tiers.length === 4 &&
+      hullTiers.tiers.every((hp, i) => i === 0 || hp > hullTiers.tiers[i - 1]),
+    hullTiers.tiers.join(' -> ')
+  );
+  check(
+    'hull: buying a hull upgrade refits to the new full capacity',
+    hullTiers.afterBuy.hull === hullTiers.afterBuy.max && hullTiers.afterBuy.depth === 1,
+    `hull=${hullTiers.afterBuy.hull}/${hullTiers.afterBuy.max}`
+  );
+
+  /* -- hull: damage scales with impact speed -------------------------- */
+  const dmg = await page.evaluate(() => {
+    const at = (s) => Sea.impactDamage(s);
+    return {
+      free: [0, 20, 45].map(at),
+      curve: [60, 90, 120, 150, 190].map(at),
+      clamped: at(400),
+      max: at(190),
+    };
+  });
+  check(
+    'hull: contact at or below the free speed costs nothing',
+    dmg.free.every((d) => d === 0),
+    `speeds 0/20/45 -> ${dmg.free.join('/')}`
+  );
+  check(
+    'hull: damage increases monotonically with speed',
+    dmg.curve.every((d, i) => i === 0 || d > dmg.curve[i - 1]),
+    `60/90/120/150/190 -> ${dmg.curve.join('/')}`
+  );
+  check(
+    'hull: damage is clamped above the top speed',
+    dmg.clamped === dmg.max,
+    `400 -> ${dmg.clamped}, 190 -> ${dmg.max}`
+  );
+
+  /* -- hull: a real collision damages, recoils and repairs ------------ */
+  const crash = await page.evaluate(
+    () =>
+      new Promise((resolve) => {
+        const s = Sea._scene;
+        Sea.save.depth = 3;
+        Sea.save.hull = Sea.hullMax();
+        s.subBody.body.reset(3600, Sea.SURFACE_Y + 930 * Sea.PX_PER_M);
+        const before = Sea.save.hull;
+        let n = 0;
+        let sawHit = false;
+        let recoiled = false;
+        let squashed = false;
+        const tick = () => {
+          const b = s.subBody.body;
+          if (b.blocked.down) {
+            sawHit = true;
+            if (b.velocity.y < 0) recoiled = true; // kicked back off the floor
+          }
+          if (Math.abs(s.subSprite.scaleX - 1) > 0.01) squashed = true;
+          n++;
+          if (n < 400) {
+            s.keys.S.isDown = true;
+            return requestAnimationFrame(tick);
+          }
+          s.keys.S.isDown = false;
+          resolve({
+            before,
+            after: Sea.save.hull,
+            sawHit,
+            recoiled,
+            squashed,
+            restoredScale: Math.abs(s.subSprite.scaleX - 1) < 0.01,
+          });
+        };
+        requestAnimationFrame(tick);
+      })
+  );
+  check(
+    'hull: hitting terrain at speed costs integrity',
+    crash.sawHit && crash.after < crash.before,
+    `${crash.before} -> ${crash.after}`
+  );
+  check(
+    'hull: the boat recoils off the surface and squashes on impact',
+    crash.recoiled && crash.squashed && crash.restoredScale,
+    `recoil=${crash.recoiled} squash=${crash.squashed} scaleRestored=${crash.restoredScale}`
+  );
+
+  const repaired = await page.evaluate(() => {
+    const s = Sea._scene;
+    Sea.save.hull = 5;
+    const damaged = Sea.save.hull;
+    s.subBody.body.reset(Sea.stationDock.x, Sea.stationDock.y);
+    s.dock();
+    const out = { damaged, afterDock: Sea.save.hull, max: Sea.hullMax() };
+    s.scene.get('ui').undock();
+    return out;
+  });
+  check(
+    'hull: docking repairs to full',
+    repaired.afterDock === repaired.max && repaired.damaged === 5,
+    `${repaired.damaged} -> ${repaired.afterDock}/${repaired.max}`
+  );
+
+  const persisted = await page.evaluate(() => {
+    Sea.save.depth = 2;
+    Sea.save.hull = 77;
+    Sea.storeSave();
+    const back = Sea.loadSave();
+    // a hull value above the fitted tier's capacity must clamp down
+    Sea.save.hull = 9999;
+    Sea.storeSave();
+    const clamped = Sea.loadSave();
+    return { round: back.hull, clamped: clamped.hull, max: Sea.UPGRADES.depth.tiers[2].hp };
+  });
+  check(
+    'hull: integrity persists and clamps to the fitted capacity',
+    persisted.round === 77 && persisted.clamped === persisted.max,
+    `roundtrip=${persisted.round}, clamped=${persisted.clamped}/${persisted.max}`
+  );
+
+  /* -- smoothness: no camera deadzone, sub-pixel rendering ------------ */
+  const smooth = await page.evaluate(() => {
+    const cam = Sea._scene.cameras.main;
+    const g = Sea._scene.game;
+    return {
+      deadzone: !!cam.deadzone,
+      roundPixels: g.config.roundPixels,
+      antialias: g.config.antialias,
+      lerp: cam.lerp.x,
+    };
+  });
+  check(
+    'motion: camera follows continuously with no deadzone to stall on',
+    smooth.deadzone === false && smooth.lerp > 0,
+    `deadzone=${smooth.deadzone} lerp=${smooth.lerp}`
+  );
+  check(
+    'motion: sub-pixel positions allowed, textures still nearest-neighbour',
+    smooth.roundPixels === false && smooth.antialias === false,
+    `roundPixels=${smooth.roundPixels} antialias=${smooth.antialias}`
+  );
+
+  // measured: screen offset per unit of world travel should barely vary
+  const glide = await page.evaluate(
+    () =>
+      new Promise((resolve) => {
+        const s = Sea._scene;
+        Sea.save.hull = Sea.hullMax(); // no emergency buoyancy skewing it
+        // Run in the open water above 100 m so nothing is hit mid-measure.
+        s.subBody.body.reset(1000, Sea.SURFACE_Y + 60 * Sea.PX_PER_M);
+        s.keys.D.isDown = true;
+        const cam = s.cameras.main;
+        // Let the camera converge and the boat reach terminal speed first:
+        // this measures steady-state gliding, not the settle transient.
+        let warm = 0;
+        const warmUp = () => {
+          warm++;
+          if (warm < 90) return requestAnimationFrame(warmUp);
+          sample();
+        };
+        const sample = () => {
+          const pts = [];
+          let n = 0;
+          const tick = () => {
+            pts.push([s.subBody.x, (s.subBody.x - cam.worldView.x) * cam.zoom]);
+            n++;
+            if (n < 120) return requestAnimationFrame(tick);
+            s.keys.D.isDown = false;
+            const rates = [];
+            for (let i = 1; i < pts.length; i++) {
+              const dw = pts[i][0] - pts[i - 1][0];
+              if (dw > 0.5) rates.push((pts[i][1] - pts[i - 1][1]) / dw);
+            }
+            const m = rates.reduce((a, b) => a + b, 0) / rates.length;
+            const sd = Math.sqrt(
+              rates.reduce((a, b) => a + (b - m) ** 2, 0) / rates.length
+            );
+            resolve({ samples: rates.length, sd: +sd.toFixed(2) });
+          };
+          requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(warmUp);
+      })
+  );
+  check(
+    'motion: screen position tracks world travel smoothly',
+    glide.samples > 40 && glide.sd < 4,
+    `variation SD ${glide.sd} over ${glide.samples} samples (was ~11.8 with a deadzone)`
+  );
+
   /* -- overall: no runtime errors ------------------------------------ */
   check('no console/page errors during the run', errors.length === 0, errors.slice(0, 3).join(' | '));
 

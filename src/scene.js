@@ -48,6 +48,10 @@ Sea.SceneMain = class extends Phaser.Scene {
     this.canDock = false;
     this.limitHit = false;
     this.photoCooldown = 0;
+    this.impactCooldown = 0;
+    this.wasBlocked = false;
+    this.prevSpeed = 0;
+    this.bumpTween = null;
 
     // Active sonar ping (top sonar tier only).
     this.time.addEvent({
@@ -58,9 +62,11 @@ Sea.SceneMain = class extends Phaser.Scene {
       },
     });
 
+    // No deadzone: with one, the sub repeatedly crosses the dead area and
+    // the camera stalls then lurches to catch up, which reads as stutter.
+    // A continuous lerp tracks smoothly instead.
     const cam = this.cameras.main;
-    cam.startFollow(this.subBody, false, 0.06, 0.06);
-    cam.setDeadzone(36, 24);
+    cam.startFollow(this.subBody, false, 0.085, 0.085);
 
     this.scene.launch('ui');
   }
@@ -165,6 +171,11 @@ Sea.SceneMain = class extends Phaser.Scene {
     const body = this.subBody.body;
     body.setVelocity(0, 0);
     body.setAcceleration(0, 0);
+    // The yard patches the hull while you shop.
+    const repaired = Sea.hullMax() - Sea.save.hull;
+    Sea.save.hull = Sea.hullMax();
+    Sea.storeSave();
+    this.scene.get('ui').onDock(repaired);
     this.scene.pause();
   }
 
@@ -267,6 +278,14 @@ Sea.SceneMain = class extends Phaser.Scene {
       );
     }
 
+    this.handleImpacts(delta);
+
+    // A breached hull blows ballast: you keep steering, but the boat
+    // wants the surface until it is repaired at the station.
+    if (Sea.save.hull <= 0) {
+      body.setAccelerationY(body.acceleration.y - 110);
+    }
+
     // Docking with the station.
     if (this.dockCooldown > 0) this.dockCooldown -= delta;
     const dockDist = Phaser.Math.Distance.Between(
@@ -289,11 +308,14 @@ Sea.SceneMain = class extends Phaser.Scene {
     Sea.Audio.setDepth(Sea.depthAt(this.subBody.y));
 
     // Tilt the nose toward vertical travel; mirrored when facing left.
+    // Smoothing is normalised against the frame time so the tilt settles
+    // at the same rate whatever the refresh rate.
     const tilt = Phaser.Math.Clamp(body.velocity.y * 0.0032, -0.34, 0.34);
+    const smooth = 1 - Math.pow(1 - 0.07, delta / 16.667);
     this.subBody.rotation = Phaser.Math.Linear(
       this.subBody.rotation,
       this.facing === 1 ? tilt : -tilt,
-      0.07
+      smooth
     );
 
     // Propeller spins lazily at idle, faster under thrust.
@@ -304,5 +326,79 @@ Sea.SceneMain = class extends Phaser.Scene {
     Sea.updateWorld(this);
     Sea.updateCreatures(this, time, delta);
     Sea.updateLighting(this);
+
+    // Physics has already stepped by the time scene update runs, so this
+    // is the velocity the boat will carry into the next step — i.e. the
+    // speed it would be doing at the moment of an impact next frame.
+    this.prevSpeed = Math.sqrt(
+      body.velocity.x * body.velocity.x + body.velocity.y * body.velocity.y
+    );
+  }
+
+  /*
+   * Wall impacts: damage scales with the speed carried into the hit, and
+   * the boat visibly recoils. Gentle contact is free, so nosing around a
+   * cave never costs anything.
+   */
+  handleImpacts(delta) {
+    const body = this.subBody.body;
+    const b = body.blocked;
+    const hit = b.up || b.down || b.left || b.right;
+
+    if (this.impactCooldown > 0) this.impactCooldown -= delta;
+
+    if (hit && !this.wasBlocked && this.impactCooldown <= 0) {
+      const speed = this.prevSpeed || 0;
+      const horizontal = b.left || b.right;
+      const dmg = Sea.impactDamage(speed);
+
+      // Recoil: kick back off the surface, scaled to the impact.
+      const kick = Phaser.Math.Clamp(speed * 0.5, 18, 95);
+      if (b.left) body.setVelocityX(kick);
+      else if (b.right) body.setVelocityX(-kick);
+      if (b.up) body.setVelocityY(kick);
+      else if (b.down) body.setVelocityY(-kick);
+
+      const strength = Phaser.Math.Clamp(speed / 190, 0.12, 1);
+      this.bumpAnim(horizontal, strength);
+      Sea.Audio.thud(strength);
+      this.cameras.main.shake(90 + strength * 160, 0.002 + strength * 0.006);
+      if (this.bubbles) this.bubbles.explode(2 + Math.round(strength * 8));
+
+      if (dmg > 0) this.damageHull(dmg);
+      this.impactCooldown = 180; // one hit per contact, not per frame
+    }
+    this.wasBlocked = hit;
+  }
+
+  /* Squash the hull along the axis of the hit, then spring back. */
+  bumpAnim(horizontal, strength) {
+    const spr = this.subSprite;
+    if (this.bumpTween) this.bumpTween.stop();
+    spr.setScale(1, 1);
+    const squash = 0.16 + strength * 0.22;
+    this.bumpTween = this.tweens.add({
+      targets: spr,
+      scaleX: horizontal ? 1 - squash : 1 + squash * 0.8,
+      scaleY: horizontal ? 1 + squash * 0.8 : 1 - squash,
+      duration: 70 + strength * 50,
+      yoyo: true,
+      ease: 'Quad.easeOut',
+      onComplete: () => {
+        spr.setScale(1, 1);
+        this.bumpTween = null;
+      },
+    });
+  }
+
+  damageHull(dmg) {
+    Sea.save.hull = Math.max(0, Sea.save.hull - dmg);
+    Sea.storeSave();
+    const ui = this.scene.get('ui');
+    if (ui) ui.onHullDamage(dmg, Sea.save.hull <= 0);
+
+    // brief damage flash on the hull
+    this.subSprite.setTint(0xff7a6a);
+    this.time.delayedCall(140, () => this.subSprite.clearTint());
   }
 };

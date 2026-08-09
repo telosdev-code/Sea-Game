@@ -66,15 +66,29 @@ the depth gauge flashes. Dock at the station (`E` near the moon pool, an
 amber arrow on the HUD always points the way home) to install upgrades —
 free while the boat is in sea trials, click to fit:
 
-- **Hull** — depth rating: 150 → 300 → 600 → 1000 m
+- **Hull** — depth rating 150 → 300 → 600 → 1000 m, and integrity
+  100 → 160 → 240 → 340
 - **Lights** — standard lamp → wide beam → long-throw beam → floodlights
 - **Sonar** — passive array (wildlife blips on the minimap) → broadband
   (longer range) → active ping (a visible pulse that sweeps the terrain)
 - **Minimap** — local chart → regional chart → full survey of the trench
 - **Salvage** — winch (recover salvage) → mag-grapple (longer reach)
 
-Equipment, money, photos and recovered salvage persist in `localStorage`;
-there's a "reset save" link in the station menu.
+Equipment, money, photos, recovered salvage and hull integrity persist in
+`localStorage`; there's a "reset save" link in the station menu.
+
+## Hull integrity
+
+The bar top-left is your hull. Bumping rock costs integrity, and **speed
+is what costs you** — contact under 45 px/s is free, so nosing carefully
+through a cave never hurts, while a full-speed collision takes 28. The
+boat visibly recoils, squashes along the axis of the hit, and the camera
+kicks.
+
+Integrity never kills you. At zero the hull blows ballast: you keep full
+control, but the boat wants the surface until it is patched. Docking at
+the station repairs it to full, free, and a hull upgrade refits it to the
+new, larger capacity.
 
 ## Earning money
 
@@ -138,8 +152,9 @@ node test/regression.js
 ```
 
 It covers save loading, the light-pass allocation and pruning behaviour,
-salvage list compaction, photo bookkeeping, and audio parameter
-throttling. Exits non-zero on failure; set `CHROME` to point at a browser
+salvage list compaction, photo bookkeeping, audio parameter throttling,
+hull damage/repair, and a measured check that the camera tracks the sub
+smoothly. Exits non-zero on failure; set `CHROME` to point at a browser
 binary if the default path doesn't exist.
 
 ## What's down there

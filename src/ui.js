@@ -17,10 +17,10 @@ Sea.UPGRADES = {
   depth: {
     name: 'HULL',
     tiers: [
-      { label: 'Rated 150 m', rating: 150 },
-      { label: 'Rated 300 m', rating: 300 },
-      { label: 'Rated 600 m', rating: 600 },
-      { label: 'Rated 1000 m', rating: 1000 },
+      { label: 'Rated 150 m', rating: 150, hp: 100 },
+      { label: 'Rated 300 m', rating: 300, hp: 160 },
+      { label: 'Rated 600 m', rating: 600, hp: 240 },
+      { label: 'Rated 1000 m', rating: 1000, hp: 340 },
     ],
   },
   lights: {
@@ -67,6 +67,7 @@ Sea.defaultSave = () => ({
   sonar: 0,
   minimap: 0,
   salvage: 0,
+  hull: 100,
   money: 0,
   muted: false,
   photographed: [],
@@ -89,6 +90,10 @@ Sea.loadSave = function () {
     if (Number.isFinite(raw.money) && raw.money >= 0) {
       save.money = Math.floor(raw.money);
     }
+    const maxHull = Sea.UPGRADES.depth.tiers[save.depth].hp;
+    save.hull = Number.isFinite(raw.hull)
+      ? Phaser.Math.Clamp(Math.round(raw.hull), 0, maxHull)
+      : maxHull;
     save.muted = !!raw.muted;
     for (const listKey of ['photographed', 'salvaged']) {
       if (Array.isArray(raw[listKey])) {
@@ -135,6 +140,27 @@ Sea.storeSave = function () {
 
 Sea.tierDef = (key) => Sea.UPGRADES[key].tiers[Sea.save[key]];
 
+/* Hull integrity capacity at the currently fitted hull tier. */
+Sea.hullMax = () => Sea.tierDef('depth').hp;
+
+/*
+ * Damage from a wall impact, by the speed carried into it. Slow contact
+ * is free so exploring tight caves never punishes you; hard hits scale
+ * quadratically, so speed is what actually costs.
+ */
+Sea.IMPACT_FREE_SPEED = 45;
+Sea.IMPACT_MAX_SPEED = 190;
+Sea.impactDamage = function (speed) {
+  if (speed <= Sea.IMPACT_FREE_SPEED) return 0;
+  const t = Phaser.Math.Clamp(
+    (speed - Sea.IMPACT_FREE_SPEED) /
+      (Sea.IMPACT_MAX_SPEED - Sea.IMPACT_FREE_SPEED),
+    0,
+    1
+  );
+  return Math.max(1, Math.round(2 + t * t * 26));
+};
+
 Sea.save = Sea.loadSave();
 Sea.photographedSet = new Set(Sea.save.photographed);
 
@@ -149,6 +175,7 @@ Sea.buyUpgrade = function (key) {
   const max = Sea.UPGRADES[key].tiers.length - 1;
   if (Sea.save[key] >= max) return false;
   Sea.save[key] += 1;
+  if (key === 'depth') Sea.save.hull = Sea.hullMax(); // refitted hull
   Sea.storeSave();
   if (Sea._scene) Sea.applyUpgrades(Sea._scene);
   Sea.Audio.install();
@@ -194,6 +221,7 @@ Sea.SceneUI = class extends Phaser.Scene {
     this.buildGauge(W, H);
     this.buildMinimap(W, H);
     this.buildMoney(W);
+    this.buildHullBar(W);
     this.buildArrow();
     this.buildPrompt(W, H);
     this.buildPauseOverlay(W, H);
@@ -213,6 +241,84 @@ Sea.SceneUI = class extends Phaser.Scene {
 
     this.keys = this.input.keyboard.addKeys('P,ESC,M');
     this.menuOpen = false;
+  }
+
+  /* ---------------- hull integrity ---------------- */
+
+  buildHullBar(W) {
+    const U = Sea.UI_SCALE;
+    const x = 8 * U;
+    const y = 8 * U;
+    this.hullW = 96 * U;
+    this.hullH = 7 * U;
+
+    this.add
+      .rectangle(x - U, y - U, this.hullW + 2 * U, this.hullH + 2 * U, 0x050b16, 0.85)
+      .setOrigin(0, 0)
+      .setStrokeStyle(U, 0x2a4a6a);
+    this.hullTrack = this.add
+      .rectangle(x, y, this.hullW, this.hullH, 0x1b2a3f)
+      .setOrigin(0, 0);
+    this.hullFill = this.add
+      .rectangle(x, y, this.hullW, this.hullH, 0x5fd8a0)
+      .setOrigin(0, 0);
+    // segment ticks so the bar reads as plating rather than a slider
+    for (let i = 1; i < 4; i++) {
+      this.add
+        .rectangle(x + (this.hullW * i) / 4, y, U, this.hullH, 0x050b16, 0.55)
+        .setOrigin(0, 0);
+    }
+    this.hullLabel = this.add
+      .text(x, y + this.hullH + 3 * U, '', {
+        fontFamily: 'monospace',
+        fontSize: 7 * U + 'px',
+        color: '#7f9ab8',
+      })
+      .setOrigin(0, 0);
+    this.shownHull = Sea.save.hull;
+  }
+
+  /* Flash the bar and shove the readout when the hull takes a hit. */
+  onHullDamage(dmg, breached) {
+    const U = Sea.UI_SCALE;
+    this.hullFill.setFillStyle(0xffffff);
+    this.time.delayedCall(90, () => this.hullFill.setFillStyle(this.hullColor()));
+    this.flashNote(breached ? 'HULL BREACH — return to the station' : '-' + dmg + ' hull');
+    if (breached) this.hullLabel.setColor('#ff7a6a');
+  }
+
+  onDock(repaired) {
+    this.hullLabel.setColor('#7f9ab8');
+    if (repaired > 0) this.flashNote('hull repaired  +' + repaired);
+  }
+
+  hullColor() {
+    const f = Sea.save.hull / Sea.hullMax();
+    if (f > 0.6) return 0x5fd8a0;
+    if (f > 0.3) return 0xe8c04a;
+    return 0xd8564a;
+  }
+
+  updateHullBar(time) {
+    const max = Sea.hullMax();
+    this.shownHull += (Sea.save.hull - this.shownHull) * 0.18;
+    if (Math.abs(Sea.save.hull - this.shownHull) < 0.5) {
+      this.shownHull = Sea.save.hull;
+    }
+    const f = Phaser.Math.Clamp(this.shownHull / max, 0, 1);
+    this.hullFill.width = this.hullW * f;
+    this.hullFill.setFillStyle(this.hullColor());
+    this.hullLabel.setText(
+      'HULL  ' + Math.round(Sea.save.hull) + ' / ' + max
+    );
+    // pulse the whole bar while breached
+    if (Sea.save.hull <= 0) {
+      this.hullFill.width = this.hullW;
+      this.hullFill.setFillStyle(0x8a2018);
+      this.hullFill.setAlpha(0.35 + 0.35 * Math.sin(time / 160));
+    } else {
+      this.hullFill.setAlpha(1);
+    }
   }
 
   /* Opening control hint, fading away once you start drifting. */
@@ -670,6 +776,7 @@ Sea.SceneUI = class extends Phaser.Scene {
       .setInteractive({ useHandCursor: true });
     resetText.on('pointerdown', () => {
       Sea.save = Sea.defaultSave();
+      Sea.save.hull = Sea.hullMax();
       Sea.photographedSet = new Set();
       Sea.storeSave();
       if (Sea._scene) Sea.applyUpgrades(Sea._scene);
@@ -772,6 +879,7 @@ Sea.SceneUI = class extends Phaser.Scene {
       this.ratingMark.setFillStyle(0xd86a5a);
     }
 
+    this.updateHullBar(time);
     this.updateMinimap(time);
 
     // guide arrow back to the station
