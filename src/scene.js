@@ -35,6 +35,7 @@ Sea.SceneMain = class extends Phaser.Scene {
     Sea.spawnCreatures(this);
     Sea.makeSalvageTextures(this);
     Sea.spawnSalvage(this);
+    Sea.releaseTerrainScratch();
     this.buildSub(Sea.STATION_X - 70, Sea.SURFACE_Y + 70);
     Sea.buildAtmosphere(this);
     Sea.applyUpgrades(this);
@@ -103,7 +104,7 @@ Sea.SceneMain = class extends Phaser.Scene {
     let shots = 0;
     let missedDark = 0;
     for (const c of this.creatures) {
-      if (Sea.save.photographed.includes(c.id)) continue;
+      if (Sea.isPhotographed(c.id)) continue;
       const cx = c.type === 'school' ? c.x : c.spr.x;
       const cy = c.type === 'school' ? c.y : c.spr.y;
       if (!view.contains(cx, cy)) continue;
@@ -115,7 +116,7 @@ Sea.SceneMain = class extends Phaser.Scene {
         continue;
       }
       Sea.addMoney(this, info.value, info.name, cx, cy - 16);
-      Sea.save.photographed.push(c.id);
+      Sea.markPhotographed(c.id);
       shots++;
     }
     if (shots > 0) {

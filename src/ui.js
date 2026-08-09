@@ -76,7 +76,10 @@ Sea.defaultSave = () => ({
 Sea.loadSave = function () {
   const save = Sea.defaultSave();
   try {
-    const raw = JSON.parse(localStorage.getItem(Sea.SAVE_KEY));
+    const stored = localStorage.getItem(Sea.SAVE_KEY);
+    if (!stored) return save; // first run — not an error
+    const raw = JSON.parse(stored);
+    if (!raw || typeof raw !== 'object') return save;
     for (const key of Object.keys(Sea.UPGRADES)) {
       const max = Sea.UPGRADES[key].tiers.length - 1;
       if (Number.isInteger(raw[key])) {
@@ -93,9 +96,22 @@ Sea.loadSave = function () {
       }
     }
   } catch (e) {
-    /* fresh save */
+    console.warn('Abyssal Drift: unreadable save, starting fresh', e);
   }
   return save;
+};
+
+/*
+ * Photographed ids are checked per creature per frame by the minimap, so
+ * they get a Set alongside the array the save file persists.
+ */
+Sea.photographedSet = new Set();
+Sea.isPhotographed = (id) => Sea.photographedSet.has(id);
+Sea.markPhotographed = function (id) {
+  if (Sea.photographedSet.has(id)) return false;
+  Sea.photographedSet.add(id);
+  Sea.save.photographed.push(id);
+  return true;
 };
 
 /*
@@ -120,6 +136,7 @@ Sea.storeSave = function () {
 Sea.tierDef = (key) => Sea.UPGRADES[key].tiers[Sea.save[key]];
 
 Sea.save = Sea.loadSave();
+Sea.photographedSet = new Set(Sea.save.photographed);
 
 Sea.applyUpgrades = function (sea) {
   const lights = Sea.tierDef('lights');
@@ -473,7 +490,7 @@ Sea.SceneUI = class extends Phaser.Scene {
         const cy = c.type === 'school' ? c.y : c.spr.y;
         const d = Phaser.Math.Distance.Between(sea.subBody.x, sea.subBody.y, cx, cy);
         if (d > range) continue;
-        const shot = Sea.save.photographed.includes(c.id);
+        const shot = Sea.isPhotographed(c.id);
         place(
           this.blips[used++],
           cx,
@@ -653,6 +670,7 @@ Sea.SceneUI = class extends Phaser.Scene {
       .setInteractive({ useHandCursor: true });
     resetText.on('pointerdown', () => {
       Sea.save = Sea.defaultSave();
+      Sea.photographedSet = new Set();
       Sea.storeSave();
       if (Sea._scene) Sea.applyUpgrades(Sea._scene);
       this.refreshMenu();

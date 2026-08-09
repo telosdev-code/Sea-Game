@@ -94,6 +94,7 @@ Sea.makeSalvageTextures = function (scene) {
 Sea.spawnSalvage = function (scene) {
   const rand = Sea.rng(0x5a17a6e);
   scene.salvage = [];
+  scene.salvageDirty = false;
   const surfaces = Sea.terrain.surfaces;
   let id = 0;
 
@@ -166,8 +167,13 @@ Sea.updateSalvage = function (scene) {
         Sea.Audio.chime();
         Sea.save.salvaged.push(item.id);
         Sea.storeSave();
+        scene.salvageDirty = true;
       },
     });
   }
-  scene.salvage = scene.salvage.filter((i) => !i.collecting || i.spr.active);
+  // Only rebuild the list when a pickup actually finished.
+  if (scene.salvageDirty) {
+    scene.salvage = scene.salvage.filter((i) => !i.collecting || i.spr.active);
+    scene.salvageDirty = false;
+  }
 };

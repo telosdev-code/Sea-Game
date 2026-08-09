@@ -205,10 +205,31 @@ Sea.Audio = (function () {
     osc.stop(t + decay + 0.1);
   };
 
-  /* The pad darkens and the water thickens with depth (meters). */
+  /*
+   * The pad darkens and the water thickens with depth (meters).
+   *
+   * Called every frame, but each write appends to the AudioParam's
+   * automation timeline and the filter glides over ~1.5 s anyway — so
+   * only commit when the depth has actually moved, and no more than a
+   * few times a second.
+   */
+  let lastDepthM = null;
+  let lastDepthAt = 0;
+  A.DEPTH_INTERVAL = 0.25; // seconds
+  A.DEPTH_EPSILON = 3; // metres
+
   A.setDepth = function (m) {
     if (!ctx) return;
     const t = ctx.currentTime;
+    // Drift smaller than the epsilon still accumulates against the last
+    // committed depth, so a slow descent does eventually update.
+    const settled =
+      lastDepthM !== null &&
+      (Math.abs(m - lastDepthM) < A.DEPTH_EPSILON ||
+        t - lastDepthAt < A.DEPTH_INTERVAL);
+    if (settled) return;
+    lastDepthM = m;
+    lastDepthAt = t;
     const f = Phaser.Math.Clamp(m / 1000, 0, 1);
     padFilter.frequency.setTargetAtTime(850 - f * 560, t, 1.5);
     waterGain.gain.setTargetAtTime(0.1 + f * 0.08, t, 1.5);
@@ -229,6 +250,9 @@ Sea.Audio = (function () {
   };
 
   A.isMuted = () => muted;
+
+  /* True once the AudioContext exists and is producing sound. */
+  A.isStarted = () => started && !!ctx;
 
   /* ------------------------- SFX ------------------------------------ */
 

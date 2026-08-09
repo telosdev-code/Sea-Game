@@ -80,6 +80,10 @@ Sea.buildLighting = function (scene) {
 
   scene.lightSources = [];
   scene.lightPool = [];
+  // Reused across frames so the light pass allocates nothing per frame.
+  scene.lightStencils = [];
+  scene.lightMatrix = new Phaser.GameObjects.Components.TransformMatrix();
+  scene.lightParentMatrix = new Phaser.GameObjects.Components.TransformMatrix();
 };
 
 /*
@@ -111,7 +115,8 @@ Sea.updateLighting = function (scene) {
   rt.fill(0x000000, dark);
 
   // Position pooled stencils, then erase them all in one pass.
-  const stencils = [];
+  const stencils = scene.lightStencils;
+  stencils.length = 0;
   let n = 0;
   const take = (key, ox, oy) => {
     let s = scene.lightPool[n];
@@ -132,7 +137,10 @@ Sea.updateLighting = function (scene) {
 
   // --- the submarine's headlight -----------------------------------
   if (scene.subCone && scene.subCone.visible) {
-    const mt = scene.subCone.getWorldTransformMatrix();
+    const mt = scene.subCone.getWorldTransformMatrix(
+      scene.lightMatrix,
+      scene.lightParentMatrix
+    );
     const d = mt.decomposeMatrix();
     const s = take('coneMask', 0, 0.5);
     s.setPosition(d.translateX - originX, d.translateY - originY);
@@ -141,11 +149,17 @@ Sea.updateLighting = function (scene) {
   }
 
   // --- point lights -------------------------------------------------
-  const keep = [];
-  for (const L of scene.lightSources) {
+  // Walked by index and compacted in place: lights are only destroyed
+  // when salvage is recovered, so rebuilding the whole array every frame
+  // just to prune would allocate for nothing.
+  const lights = scene.lightSources;
+  for (let i = lights.length - 1; i >= 0; i--) {
+    const L = lights[i];
     const o = L.obj;
-    if (!o || !o.scene) continue; // destroyed — drop it
-    keep.push(L);
+    if (!o || !o.scene) {
+      lights.splice(i, 1); // destroyed — drop it
+      continue;
+    }
     const r = L.follow ? L.radius * (o.scaleX || 1) : L.radius;
     const x = o.x - originX;
     const y = o.y - originY;
@@ -157,7 +171,6 @@ Sea.updateLighting = function (scene) {
       s.setAlpha(Phaser.Math.Clamp(0.45 + o.alpha, 0.3, 1));
     }
   }
-  scene.lightSources = keep;
 
   if (stencils.length) rt.erase(stencils);
 };

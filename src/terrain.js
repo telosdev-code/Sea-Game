@@ -161,6 +161,17 @@ Sea.generateTerrain = function (scene) {
   Sea.makeMinimapTexture(scene);
 };
 
+/*
+ * The surface/ceiling anchor lists exist only to place decoration and
+ * salvage at build time; a few thousand objects that would otherwise stay
+ * pinned for the whole session.
+ */
+Sea.releaseTerrainScratch = function () {
+  if (!Sea.terrain) return;
+  Sea.terrain.surfaces = null;
+  Sea.terrain.ceilings = null;
+};
+
 /* Solid-rock query in world coordinates (used by creatures and spawns). */
 Sea.isSolid = function (wx, wy) {
   const t = Sea.terrain;

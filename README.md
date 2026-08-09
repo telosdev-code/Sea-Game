@@ -124,7 +124,23 @@ src/salvage.js        recoverable cargo scattered over the terrain
 src/audio.js          procedural lofi ambience + SFX (pure WebAudio)
 src/ui.js             equipment/save, money, depth gauge, minimap, menus
 src/scene.js          the ocean scene tying it all together
+test/regression.js    headless regression tests (dev-only, see below)
 ```
+
+## Tests
+
+The game itself has no dependencies. The regression suite is dev-only and
+drives the real game in headless Chromium:
+
+```sh
+npm install --no-save playwright-core
+node test/regression.js
+```
+
+It covers save loading, the light-pass allocation and pruning behaviour,
+salvage list compaction, photo bookkeeping, and audio parameter
+throttling. Exits non-zero on failure; set `CHROME` to point at a browser
+binary if the default path doesn't exist.
 
 ## What's down there
 
